@@ -1,0 +1,92 @@
+# Kafka single-broker setup with SASL/PLAIN authentication (KRaft mode, no ZooKeeper)
+# Image: apache/kafka (official Apache Kafka image)
+# Usage:
+#   docker compose up -d
+#   docker compose down          # stop, keep volumes
+#   docker compose down -v       # stop and remove volumes
+
+services:
+  kafka:
+    image: apache/kafka:3.9.0
+    container_name: kv8-kafka
+    hostname: kafka
+    ports:
+      - "19092:19092"     # SASL_PLAINTEXT listener -- localhost clients
+      - "19093:19093"     # SASL_PLAINTEXT_EXT listener -- LAN clients
+      - "19094:19094"     # PLAINTEXT controller (internal KRaft)
+    environment:
+      # ---- KRaft (no ZooKeeper) ----
+      KAFKA_NODE_ID: "1"
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:19094
+      CLUSTER_ID: S3Y4LWxvY2FsLWNsdXN0ZXI
+
+      # ---- Credentials (sourced from .env) ----
+      KAFKA_INTER_BROKER_USER:     ${KAFKA_INTER_BROKER_USER:-admin}
+      KAFKA_INTER_BROKER_PASSWORD: ${KAFKA_INTER_BROKER_PASSWORD:-admin-secret}
+      KAFKA_CLIENT_USERS:          ${KAFKA_CLIENT_USERS:-kv8producer}
+      KAFKA_CLIENT_PASSWORDS:      ${KAFKA_CLIENT_PASSWORDS:-kv8secret}
+
+      # ---- Listeners ----
+      # Two client-facing listeners:
+      #   SASL_PLAINTEXT      port 19092  advertised as localhost  -- same-machine clients
+      #   SASL_PLAINTEXT_EXT  port 19093  advertised as KAFKA_HOST_IP -- remote LAN clients
+      # Set KAFKA_HOST_IP in .env to the host machine's LAN IP address.
+      KAFKA_LISTENERS: SASL_PLAINTEXT://:19092,SASL_PLAINTEXT_EXT://:19093,CONTROLLER://:19094
+      KAFKA_ADVERTISED_LISTENERS: SASL_PLAINTEXT://localhost:19092,SASL_PLAINTEXT_EXT://${KAFKA_HOST_IP:-localhost}:19093
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: SASL_PLAINTEXT:SASL_PLAINTEXT,SASL_PLAINTEXT_EXT:SASL_PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: SASL_PLAINTEXT
+
+      # ---- SASL / PLAIN authentication ----
+      KAFKA_SASL_ENABLED_MECHANISMS: PLAIN
+      KAFKA_SASL_MECHANISM_INTER_BROKER_PROTOCOL: PLAIN
+      # JAAS config is written at container startup by the entrypoint below.
+      KAFKA_OPTS: "-Djava.security.auth.login.config=/tmp/kafka_server_jaas.conf"
+
+      # ---- Broker tuning (throughput-focused) ----
+      KAFKA_NUM_PARTITIONS: "1"
+      KAFKA_DEFAULT_REPLICATION_FACTOR: "1"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_LOG_RETENTION_HOURS: "168"
+      KAFKA_LOG_SEGMENT_BYTES: "1073741824"
+      KAFKA_LOG_DIRS: /tmp/kraft-combined-logs
+      # Eliminate the default 3-second delay before first rebalance assignment.
+      # Without this, consumers see recv=0 for the first 2-3 seconds of every run.
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: "0"
+      # ---- Throughput tuning ----
+      # socket.send.buffer.bytes / socket.receive.buffer.bytes: 1 MB each
+      # (default 100 KB is too small for high-throughput local benchmarks).
+      KAFKA_SOCKET_SEND_BUFFER_BYTES: "1048576"
+      KAFKA_SOCKET_RECEIVE_BUFFER_BYTES: "1048576"
+      # Allow large produce requests (default 1 MB is tight at 2.5 M msg/s).
+      KAFKA_MESSAGE_MAX_BYTES: "10485760"
+      KAFKA_REPLICA_FETCH_MAX_BYTES: "10485760"
+      # num.io.threads / num.network.threads: more threads for parallel I/O.
+      KAFKA_NUM_IO_THREADS: "8"
+      KAFKA_NUM_NETWORK_THREADS: "4"
+      # Flush policy: let the OS page cache handle fsync (throughput over durability).
+      KAFKA_LOG_FLUSH_INTERVAL_MESSAGES: "50000"
+      KAFKA_LOG_FLUSH_INTERVAL_MS: "1000"
+
+    # Write the SASL/PLAIN JAAS config from .env credentials before starting Kafka.
+    # $$VAR in the command block: compose collapses $$ -> $ so bash sees $VAR at runtime.
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        set -e
+        cat > /tmp/kafka_server_jaas.conf << EOF
+        KafkaServer {
+            org.apache.kafka.common.security.plain.PlainLoginModule required
+            username="$$KAFKA_INTER_BROKER_USER"
+            password="$$KAFKA_INTER_BROKER_PASSWORD"
+            user_$$KAFKA_INTER_BROKER_USER="$$KAFKA_INTER_BROKER_PASSWORD"
+            user_$$KAFKA_CLIENT_USERS="$$KAFKA_CLIENT_PASSWORDS";
+        };
+        EOF
+        exec /etc/kafka/docker/run
+
+    restart: unless-stopped

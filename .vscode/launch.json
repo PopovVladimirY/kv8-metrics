@@ -1,0 +1,161 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+    {
+        "name": "(Windows) kv8probe",
+        "type": "cppvsdbg",
+        "request": "launch",
+        "program": "${workspaceFolder}/build/_output_/bin/kv8probe.exe",
+        "args": [
+            "--brokers", "localhost:19092", 
+            "--security-proto", "sasl_plaintext", 
+            "--sasl-mechanism", "PLAIN", 
+            "--user", "kv8producer", 
+            "--pass", "kv8secret",
+            "--start-tick", "1000000",
+            "--count", "10000000",
+            "--channel", "kv8ts.test_scope_2"
+        ]
+        "stopAtEntry": false,
+        "cwd": "${workspaceFolder}/build/_output_/bin",
+        "environment": [],
+        "console": "externalTerminal"
+    },
+    {
+        "name": "(Windows) kv8verify",
+        "type": "cppvsdbg",
+        "request": "launch",
+        "program": "${workspaceFolder}/build/_output_/bin/kv8verify.exe",
+        "args": [
+            "--topic", "kv8ts.test_scope_2.20260301T090026Z-EECAB9.d.0948BE17.0000",
+            "--count", "10000000",
+            "--start-tick", "1000000",
+            "--wid", "0",
+            "--brokers", "localhost:19092",
+            "--security-proto", "sasl_plaintext",
+            "--sasl-mechanism", "PLAIN",
+            "--user", "kv8producer",
+            "--pass", "kv8secret"
+        ],
+        "dargs": [
+            "--topic", "kv8ts.test_scope_2.20260301T085503Z-E9DBBC.d.0948BE17.0000",
+            "--count", "10000000",
+            "--start-tick", "1000000",
+            "--wid", "0",
+            "--brokers", "localhost:19092",
+            "--security-proto", "sasl_plaintext",
+            "--sasl-mechanism", "PLAIN",
+            "--user", "kv8producer",
+            "--pass", "kv8secret",
+
+
+            "--topic", "kv8ts.test",
+            "--count", "10000",
+            "--start-tick", "1000000",
+            "--wid", "0",
+            "--brokers", "localhost:19092",
+            "--security-proto", "sasl_plaintext",
+            "--sasl-mechanism", "PLAIN",
+            "--user", "kv8producer",
+            "--pass", "kv8secret"
+
+            "--topic", "kv8ts.20260221T230642Z-D23AF1", 
+            "--count", "1000", 
+            "--start-tick", "5000000", 
+            "--wid", "3", 
+            "--brokers", "localhost:19092", 
+            "--security-proto", "sasl_plaintext", 
+            "--sasl-mechanism", "PLAIN", 
+            "--user", "kv8producer", 
+            "--pass", "kv8secret"        
+        ],
+        "stopAtEntry": false,
+        "cwd": "${workspaceFolder}/build/_output_/bin",
+        "environment": [],
+        "console": "externalTerminal"
+    },
+    {
+        "name": "(Windows) kv8maint",
+        "type": "cppvsdbg",
+        "request": "launch",
+        "program": "${workspaceFolder}/build/_output_/bin/kv8maint.exe",
+        "args": [
+            "--brokers", "localhost:19092",
+            "--security-proto", "sasl_plaintext",
+            "--sasl-mechanism", "PLAIN",
+            "--user", "kv8producer",
+            "--pass", "kv8secret"
+        ],
+        "stopAtEntry": false,
+        "cwd": "${workspaceFolder}/build/_output_/bin",
+        "environment": [],
+        "console": "externalTerminal"
+    },
+    {
+        "name": "(Windows) kv8bench",
+        "type": "cppvsdbg",
+        "request": "launch",
+        "program": "${workspaceFolder}/build/_output_/bin/kv8bench.exe",
+        "args": [
+            "--tempo", "100000",
+            "--udt"
+        ],
+        "stopAtEntry": false,
+        "cwd": "${workspaceFolder}/build/_output_/bin",
+        "environment": [],
+        "console": "externalTerminal"
+    },
+    {
+        "name": "(Windows) kv8zoom",
+        "type": "cppvsdbg",
+        "request": "launch",
+        "program": "${workspaceFolder}/build/_output_/bin/kv8zoom.exe",
+        "args": [],
+        "stopAtEntry": false,
+        "cwd": "${workspaceFolder}/build/_output_/bin",
+        "environment": []
+    },
+    {
+        "name": "(Windows) kv8scope",
+        "type": "cppvsdbg",
+        "request": "launch",
+        "program": "${workspaceFolder}/build/_output_/bin/kv8scope.exe",
+        "args": [],
+        "stopAtEntry": false,
+        "cwd": "${workspaceFolder}/build/_output_/bin",
+        "environment": []
+    },
+     {
+        "name": "(Windows) kv8feeder (explicit args)",
+        "type": "cppvsdbg",
+        "request": "launch",
+        "program": "${workspaceFolder}/build/_output_/bin/kv8feeder.exe",
+        "args": [
+            "/KV8.brokers=localhost:19092",
+            "/KV8.channel=kv8/e2e_test",
+            "/KV8.user=kv8producer",
+            "/KV8.pass=kv8secret",
+            "--duration=10"
+        ],
+        "stopAtEntry": false,
+        "cwd": "${workspaceFolder}/build/_output_/bin",
+        "environment": [],
+        "console": "externalTerminal"
+    },
+   {
+        "name": "(Windows) kv8feeder",
+        "type": "cppvsdbg",
+        "request": "launch",
+        "program": "${workspaceFolder}/build/_output_/bin/kv8feeder.exe",
+        "args": [
+        ],
+        "stopAtEntry": false,
+        "cwd": "${workspaceFolder}/build/_output_/bin",
+        "environment": []
+    }
+    
+    ]
+}

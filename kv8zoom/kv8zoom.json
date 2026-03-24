@@ -1,0 +1,27 @@
+{
+    "kafka": {
+        "brokers": "localhost:19092",
+        "security_proto": "sasl_plaintext",
+        "sasl_mechanism": "PLAIN",
+        "user": "kv8producer",
+        "pass": "kv8secret",
+        "group_id": "kv8zoom",
+        "channel": "kv8log/kv8feeder"
+    },
+    "bridge": {
+        "ws_port": 9001,
+        "ring_buffer_seconds": 30,
+        "snapshot_interval_s": 5,
+        "attitude_slerp_window_ms": 100,
+        "decimation": {
+            "min_displacement_m": 0.5,
+            "zoom_rates": [
+                { "zoom_max": 3,  "rate_hz": 1  },
+                { "zoom_max": 7,  "rate_hz": 5  },
+                { "zoom_max": 12, "rate_hz": 15 },
+                { "zoom_max": 17, "rate_hz": 30 },
+                { "zoom_max": 22, "rate_hz": 100 }
+            ]
+        }
+    }
+}
