@@ -1,0 +1,122 @@
+version: "3.9"
+
+# ---------------------------------------------------------------------------
+# kv8-metrics — full telemetry stack
+# ---------------------------------------------------------------------------
+# Services:
+#   kafka       – Apache Kafka broker (KRaft mode, no Zookeeper)
+#   processor   – Aggregates raw metrics into time-windowed summaries
+#   monitor     – Evaluates alert rules and fires notifications
+#   viewer      – REST API for querying aggregated metrics
+#
+# Usage:
+#   docker compose up -d
+#   curl http://localhost:8080/metrics
+# ---------------------------------------------------------------------------
+
+services:
+  # --------------------------------------------------------------------------
+  # Kafka (KRaft — no Zookeeper dependency)
+  # --------------------------------------------------------------------------
+  kafka:
+    image: apache/kafka:3.7.0
+    container_name: kv8-kafka
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_LOG_RETENTION_HOURS: 48
+    ports:
+      - "9092:9092"
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 > /dev/null 2>&1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # --------------------------------------------------------------------------
+  # Topic initialiser — creates required topics before services start
+  # --------------------------------------------------------------------------
+  kafka-init:
+    image: apache/kafka:3.7.0
+    container_name: kv8-kafka-init
+    depends_on:
+      kafka:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    command: |
+      "
+      /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic kv8.metrics.raw        --partitions 4 --replication-factor 1
+      /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic kv8.metrics.aggregated --partitions 4 --replication-factor 1
+      /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic kv8.metrics.alerts     --partitions 1 --replication-factor 1
+      echo 'Topics created.'
+      "
+    restart: on-failure
+
+  # --------------------------------------------------------------------------
+  # Processor service
+  # --------------------------------------------------------------------------
+  processor:
+    build:
+      context: ./processor
+      dockerfile: Dockerfile
+    container_name: kv8-processor
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+    environment:
+      BOOTSTRAP_SERVERS: kafka:9092
+    command: >
+      python main.py
+        --bootstrap-servers kafka:9092
+        --input-topic kv8.metrics.raw
+        --output-topic kv8.metrics.aggregated
+        --window 60
+    restart: unless-stopped
+
+  # --------------------------------------------------------------------------
+  # Monitor / alerting service
+  # --------------------------------------------------------------------------
+  monitor:
+    build:
+      context: ./monitor
+      dockerfile: Dockerfile
+    container_name: kv8-monitor
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+    command: >
+      python main.py
+        --bootstrap-servers kafka:9092
+        --input-topic kv8.metrics.aggregated
+        --alerts-topic kv8.metrics.alerts
+    restart: unless-stopped
+
+  # --------------------------------------------------------------------------
+  # Viewer REST API
+  # --------------------------------------------------------------------------
+  viewer:
+    build:
+      context: ./viewer
+      dockerfile: Dockerfile
+    container_name: kv8-viewer
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+    ports:
+      - "8080:8080"
+    command: >
+      python main.py
+        --bootstrap-servers kafka:9092
+        --topic kv8.metrics.aggregated
+        --host 0.0.0.0
+        --port 8080
+    restart: unless-stopped
