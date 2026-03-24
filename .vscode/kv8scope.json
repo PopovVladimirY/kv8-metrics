@@ -1,0 +1,43 @@
+{
+    "brokers": "localhost:19092",
+    "counter_viz_modes": {},
+    "cross_bar": true,
+    "default_time_win": 15.0,
+    "font_face": "sans_serif",
+    "font_size": 22,
+    "max_points_per_trace": 16000000,
+    "password": "kv8secret",
+    "realtime_time_win": 15.0,
+    "recent_sessions": [],
+    "sasl_mechanism": "PLAIN",
+    "security_protocol": "sasl_plaintext",
+    "session_poll_ms": 5000,
+    "table_column_widths": {
+        "##CounterTable_12": [
+            50.0,
+            645.0,
+            77.0,
+            77.0,
+            86.0,
+            86.0,
+            86.0,
+            86.0,
+            86.0,
+            86.0,
+            86.0,
+            8.0
+        ],
+        "##SessionTable": [
+            46.0,
+            232.0,
+            396.0,
+            132.0,
+            120.0,
+            418.0,
+            172.0
+        ]
+    },
+    "theme": "inferno",
+    "username": "kv8producer",
+    "viz_mode": "simple"
+}

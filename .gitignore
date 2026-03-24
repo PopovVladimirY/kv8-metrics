@@ -19,7 +19,6 @@ env/
 htmlcov/
 
 # IDEs
-.vscode/
 .idea/
 *.swp
 *.swo
@@ -30,3 +29,17 @@ htmlcov/
 # OS
 .DS_Store
 Thumbs.db
+
+# Build and artifacts
+*build*/
+tmp/
+*.log
+*.tmp
+*.bak
+*.csv
+node_modules/
+dist/
+Kv8Planning/
+scripts/
+*.env
+

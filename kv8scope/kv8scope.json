@@ -1,0 +1,15 @@
+{
+    "brokers": "localhost:19092",
+    "default_time_win": 15.0,
+    "font_size": 11,
+    "max_points_per_trace": 16000000,
+    "password": "kv8secret",
+    "realtime_time_win": 15.0,
+    "recent_sessions": [],
+    "sasl_mechanism": "PLAIN",
+    "security_protocol": "sasl_plaintext",
+    "session_poll_ms": 2000,
+    "theme": "night_sky",
+    "username": "kv8producer",
+    "viz_mode": "simple"
+}
