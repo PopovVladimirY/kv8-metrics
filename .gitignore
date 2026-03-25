@@ -40,6 +40,5 @@ tmp/
 node_modules/
 dist/
 Kv8Planning/
-scripts/
 *.env
 
