@@ -83,6 +83,29 @@ public:
     /// Cheap O(N) scan; render thread only.
     size_t CountVisible() const;
 
+    /// Export entries in [tsMinNs, tsMaxNs] to a CSV file.
+    ///
+    /// CSV columns:
+    ///   timestamp_iso,timestamp_ns,level,cpu,thread,file,line,function,message
+    /// Rows are emitted in time-ascending order.  The message column is
+    /// quoted and embedded double-quotes are doubled per RFC 4180.
+    ///
+    /// @param tsMinNs     Inclusive lower bound (Unix-epoch ns).  Pass 0
+    ///                    to start at the earliest entry.
+    /// @param tsMaxNs     Inclusive upper bound.  Pass UINT64_MAX for "no
+    ///                    upper bound".
+    /// @param uLevelMask  Bitmask of severity levels to include.  Pass
+    ///                    0x1F (= all five levels) to disable level filtering.
+    /// @param sFilter     Substring required in the message column.  Pass
+    ///                    "" to disable text filtering.
+    /// @param sPath       Output file path.
+    /// @param pnWritten   Optional out: number of rows actually written.
+    /// @return true on success, false if the file could not be opened.
+    bool ExportCSV(uint64_t tsMinNs, uint64_t tsMaxNs,
+                   uint8_t uLevelMask, const std::string& sFilter,
+                   const std::string& sPath,
+                   size_t* pnWritten = nullptr) const;
+
 private:
     void ResolveSiteForEntry(Entry& e) const;
 

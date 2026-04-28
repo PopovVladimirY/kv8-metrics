@@ -170,6 +170,9 @@ ScopeWindow::ScopeWindow(const std::string& sPrefix,
 
     m_pLogPanel = std::make_unique<LogPanel>();
     m_pLogPanel->SetLogStore(m_pLogStore.get());
+    m_pLogPanel->SetSessionLabel(!m_meta.sName.empty()
+                                     ? m_meta.sName
+                                     : m_meta.sSessionID);
     m_pWaveform->SetLogStore(m_pLogStore.get());
 
     {
@@ -470,7 +473,15 @@ bool ScopeWindow::Render()
 
     // L4: render the trace-log panel (manages its own ImGui window).
     if (m_pLogPanel)
+    {
+        // Follow only makes sense for sessions that still receive new
+        // entries.  Push current liveness so the panel can disable the
+        // checkbox (and silently drop Follow=true) on offline sessions.
+        const bool bLive = (m_eLiveness == SessionLiveness::Live ||
+                            m_eLiveness == SessionLiveness::GoingOffline);
+        m_pLogPanel->SetSessionLive(bLive);
         m_pLogPanel->Render(m_pWaveform.get());
+    }
 
     // Any panel (annotations, log panel, future) that called
     // WaveformRenderer::NavigateTo() since the previous frame implicitly

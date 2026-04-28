@@ -628,9 +628,18 @@ WaveformRenderer::CounterStats WaveformRenderer::QueryStats(
 
 void WaveformRenderer::NavigateTo(double dTimestamp)
 {
-    m_bNavPending   = true;
-    m_dNavTarget    = dTimestamp;
-    m_bNavRequested = true;
+    m_bNavPending    = true;
+    m_dNavTarget     = dTimestamp;
+    m_dNavTargetSpan = 0.0;
+    m_bNavRequested  = true;
+}
+
+void WaveformRenderer::NavigateToWithSpan(double dTimestamp, double dSpanSec)
+{
+    m_bNavPending    = true;
+    m_dNavTarget     = dTimestamp;
+    m_dNavTargetSpan = (dSpanSec > 0.0) ? dSpanSec : 0.0;
+    m_bNavRequested  = true;
 }
 
 // ---------------------------------------------------------------------------
@@ -1065,12 +1074,23 @@ void WaveformRenderer::RenderAnnotationsInPlot()
 }
 
 // ---------------------------------------------------------------------------
-// RenderLogMarkersInPlot (Phase L4) -- draw filled triangles at the bottom
-// of the plot for trace-log entries with severity WARN, ERROR, or FATAL.
-// DEBUG and INFO are intentionally excluded from the timeline so the plot
-// is not cluttered with routine traffic; they are still visible in the
-// LogPanel.  Hovering a marker opens a tooltip with file:line + message;
-// left-click navigates the viewport to the entry's timestamp.
+// RenderLogMarkersInPlot (Phase L4 + LOD enhancement) -- draws WARN/ERROR/
+// FATAL trace-log entries as small triangle glyphs at the bottom of the
+// plot.  DEBUG and INFO are intentionally excluded so the plot is not
+// cluttered with routine traffic; they are still visible in the LogPanel.
+//
+// Level-of-detail rule (kept deliberately subtle):
+//   * Entries are bucketed by pixel column (kBucketPx wide, default 4 px).
+//   * A bucket holding one entry  -> hollow outline triangle (low-alpha
+//     hint; the row stays unobtrusive on busy plots).
+//   * A bucket holding 2+ entries -> solid filled triangle in the
+//     dominant severity colour.  This is the only "louder" visual cue;
+//     no badges, numbers, or stacked bars -- the user zooms in to
+//     resolve the cluster, and the LogPanel always carries the full
+//     ground truth.
+//
+// Hover tooltip identifies the bucket nearest the cursor; click navigates
+// to the first entry inside that bucket.
 //
 // Triangle geometry: 8 px wide, 10 px tall, anchored at the plot's bottom
 // edge with the apex pointing up.  Colours match LogPanel::LevelColor().
@@ -1094,9 +1114,19 @@ void WaveformRenderer::RenderLogMarkersInPlot()
     const float   fLeftX = pMin.x;
     const float   fRightX= pMin.x + pSize.x;
 
-    static constexpr float kHalfW = 4.0f;   // half marker width  (8 px total)
-    static constexpr float kTallH = 10.0f;  // marker height
-    static constexpr float kHitR  = 6.0f;   // hover proximity radius (px)
+    static constexpr float kHalfW    = 4.0f;   // half marker width  (8 px total)
+    static constexpr float kTallH    = 10.0f;  // marker height
+    static constexpr float kHitR     = 6.0f;   // hover proximity radius (px)
+    static constexpr float kBucketPx = 4.0f;   // LOD bucket width (px)
+
+    // Zoom-out severity gate.  When the visible window spans more than
+    // kWarnHideSpanSec seconds of session time, WARNings are dropped
+    // from the timeline so only ERROR and FATAL remain.  The intent is
+    // the same as the aggregation rule above: keep the bottom strip
+    // calm at low zoom; the LogPanel always carries the full set.
+    static constexpr double kWarnHideSpanSec = 60.0;
+    const double dSpanSec   = m_dXLimitMax - m_dXLimitMin;
+    const int    iMinLevel  = (dSpanSec > kWarnHideSpanSec) ? 3 : 2;
 
     const ImVec2  vMouse  = ImGui::GetMousePos();
     const bool    bHover  = ImPlot::IsPlotHovered();
@@ -1105,8 +1135,35 @@ void WaveformRenderer::RenderLogMarkersInPlot()
                             !ImGui::GetIO().KeyCtrl &&
                             !ImGui::GetIO().KeyShift;
 
-    int iBestEntry = -1;
-    float fBestDist2 = kHitR * kHitR;
+    // ------------------------------------------------------------------
+    // Pass 1 -- bucket scan.  One pass over the visible-window slice
+    // groups entries by pixel column.  We carry only what's needed for
+    // render + tooltip + click.
+    // ------------------------------------------------------------------
+    struct Bucket
+    {
+        float    fCenterX;       // px, centre of the bucket column
+        int      iMaxLevel;      // dominant (highest) severity in bucket
+        uint32_t uCount;         // entries collapsed into this bucket
+        size_t   iFirstEntry;    // index into entries[] of the first hit
+        uint64_t qwSelectedTs;   // non-zero if selection falls in bucket
+    };
+
+    static thread_local std::vector<Bucket> sBuckets;
+    sBuckets.clear();
+    sBuckets.reserve(256);
+
+    int   iCurCol  = INT_MIN;
+    auto  flushNew = [&](float fX, int iLvl, size_t iIdx, uint64_t qwTs) {
+        Bucket b;
+        b.fCenterX     = fX;
+        b.iMaxLevel    = iLvl;
+        b.uCount       = 1u;
+        b.iFirstEntry  = iIdx;
+        b.qwSelectedTs = (m_qwSelectedLogTsNs != 0 &&
+                          qwTs == m_qwSelectedLogTsNs) ? qwTs : 0ULL;
+        sBuckets.push_back(b);
+    };
 
     for (size_t i = 0; i < entries.size(); ++i)
     {
@@ -1114,7 +1171,7 @@ void WaveformRenderer::RenderLogMarkersInPlot()
 
         // Severity filter: only WARN(2)/ERROR(3)/FATAL(4) on the timeline.
         const int iLvl = static_cast<int>(e.eLevel);
-        if (iLvl < 2)
+        if (iLvl < iMinLevel)
             continue;
 
         // Map ns -> session-relative seconds, then to screen X.
@@ -1128,67 +1185,135 @@ void WaveformRenderer::RenderLogMarkersInPlot()
         if (fX < fLeftX || fX > fRightX)
             continue;
 
-        const ImVec4 col4 = LogPanel::LevelColor(iLvl);
-        const ImU32  col  = ImGui::ColorConvertFloat4ToU32(col4);
-        const ImU32  colEdge = IM_COL32(0, 0, 0, 200);
+        const int iCol = static_cast<int>((fX - fLeftX) / kBucketPx);
+        if (iCol != iCurCol || sBuckets.empty())
+        {
+            // Snap the bucket centre to the column midpoint so adjacent
+            // buckets do not visually drift with sub-pixel jitter.
+            const float fColX = fLeftX + (iCol + 0.5f) * kBucketPx;
+            flushNew(fColX, iLvl, i, e.tsNs);
+            iCurCol = iCol;
+        }
+        else
+        {
+            Bucket& b = sBuckets.back();
+            b.uCount += 1u;
+            if (iLvl > b.iMaxLevel)
+                b.iMaxLevel = iLvl;
+            if (b.qwSelectedTs == 0 && m_qwSelectedLogTsNs != 0 &&
+                e.tsNs == m_qwSelectedLogTsNs)
+                b.qwSelectedTs = e.tsNs;
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Pass 2 -- render glyphs and pick the hover target.  Cost is bound
+    // by plot width (one glyph per ~4 px column), independent of the
+    // visible entry count.
+    // ------------------------------------------------------------------
+    int   iBestBucket = -1;
+    float fBestDist2  = kHitR * kHitR;
+
+    for (size_t bi = 0; bi < sBuckets.size(); ++bi)
+    {
+        const Bucket& b  = sBuckets[bi];
+        const float   fX = b.fCenterX;
+
+        ImVec4 col4 = LogPanel::LevelColor(b.iMaxLevel);
+        // Single entries get a hollow, lower-presence triangle so the
+        // bottom strip stays calm.  Aggregation is the only condition
+        // that warrants a solid fill.
+        const bool   bAggregate = (b.uCount > 1u);
+        const ImU32  colEdge    = IM_COL32(0, 0, 0, 200);
 
         const ImVec2 a(fX,         fBaseY - kTallH);  // apex
-        const ImVec2 b(fX - kHalfW, fBaseY);          // bottom-left
-        const ImVec2 c(fX + kHalfW, fBaseY);          // bottom-right
-        pDL->AddTriangleFilled(a, b, c, col);
-        pDL->AddTriangle(a, b, c, colEdge, 1.0f);
+        const ImVec2 vbl(fX - kHalfW, fBaseY);        // bottom-left
+        const ImVec2 vbr(fX + kHalfW, fBaseY);        // bottom-right
 
-        // Halo for the currently selected log entry: a slightly larger
-        // outline triangle around the marker so it pops in the busy
-        // bottom strip.  The dashed cursor below also marks the column,
-        // but the halo unambiguously identifies which marker is selected
-        // when several events fall on adjacent pixel columns.
-        if (m_qwSelectedLogTsNs != 0 && e.tsNs == m_qwSelectedLogTsNs)
+        if (bAggregate)
         {
-            const float  fHaloPad  = 3.0f;
-            const ImVec2 ha(fX,                       fBaseY - kTallH - fHaloPad);
-            const ImVec2 hb(fX - kHalfW - fHaloPad,   fBaseY + fHaloPad);
-            const ImVec2 hc(fX + kHalfW + fHaloPad,   fBaseY + fHaloPad);
+            const ImU32 colFill = ImGui::ColorConvertFloat4ToU32(col4);
+            pDL->AddTriangleFilled(a, vbl, vbr, colFill);
+            pDL->AddTriangle(a, vbl, vbr, colEdge, 1.0f);
+        }
+        else
+        {
+            // Hollow hint: dimmed outline, tiny dab of fill at low alpha
+            // so the shape reads at small sizes without dominating.
+            ImVec4 colDim = col4;
+            colDim.w     *= 0.30f;
+            const ImU32 colFill = ImGui::ColorConvertFloat4ToU32(colDim);
+            const ImU32 colLine = ImGui::ColorConvertFloat4ToU32(col4);
+            pDL->AddTriangleFilled(a, vbl, vbr, colFill);
+            pDL->AddTriangle(a, vbl, vbr, colLine, 1.0f);
+        }
+
+        // Halo for the currently selected log entry.  Drawn whenever the
+        // selection's bucket is on screen, regardless of aggregation.
+        if (b.qwSelectedTs != 0)
+        {
+            const float  fHaloPad = 3.0f;
+            const ImVec2 ha(fX,                     fBaseY - kTallH - fHaloPad);
+            const ImVec2 hb(fX - kHalfW - fHaloPad, fBaseY + fHaloPad);
+            const ImVec2 hc(fX + kHalfW + fHaloPad, fBaseY + fHaloPad);
             pDL->AddTriangle(ha, hb, hc, IM_COL32(255, 255, 255, 230), 2.0f);
         }
 
         if (bHover)
         {
             const float fDx = vMouse.x - fX;
-            // Restrict the hover Y band to the marker neighbourhood.
             if (vMouse.y >= fBaseY - kTallH - 4.0f &&
                 vMouse.y <= fBaseY + 4.0f)
             {
                 const float fD2 = fDx * fDx;
                 if (fD2 < fBestDist2)
                 {
-                    fBestDist2 = fD2;
-                    iBestEntry = static_cast<int>(i);
+                    fBestDist2  = fD2;
+                    iBestBucket = static_cast<int>(bi);
                 }
             }
         }
     }
 
-    if (iBestEntry >= 0)
+    if (iBestBucket >= 0)
     {
-        const LogStore::Entry& e = entries[iBestEntry];
+        const Bucket&          b = sBuckets[iBestBucket];
+        const LogStore::Entry& e = entries[b.iFirstEntry];
 
         ImGui::BeginTooltip();
-        ImGui::TextColored(LogPanel::LevelColor(static_cast<int>(e.eLevel)),
-                           "%s", LogPanel::LevelLabel(static_cast<int>(e.eLevel)));
-        ImGui::SameLine();
-        if (e.bSiteResolved)
-            ImGui::Text("%s:%u  %s",
-                        e.sFile.c_str(),
-                        static_cast<unsigned>(e.dwLine),
-                        e.sFunc.c_str());
+        if (b.uCount == 1u)
+        {
+            ImGui::TextColored(LogPanel::LevelColor(static_cast<int>(e.eLevel)),
+                               "%s",
+                               LogPanel::LevelLabel(static_cast<int>(e.eLevel)));
+            ImGui::SameLine();
+            if (e.bSiteResolved)
+                ImGui::Text("%s:%u  %s",
+                            e.sFile.c_str(),
+                            static_cast<unsigned>(e.dwLine),
+                            e.sFunc.c_str());
+            else
+                ImGui::TextDisabled("<site:%08X>",
+                                    static_cast<unsigned>(e.dwSiteHash));
+            ImGui::Separator();
+            ImGui::PushTextWrapPos(540.0f);
+            ImGui::TextUnformatted(e.sMessage.c_str());
+            ImGui::PopTextWrapPos();
+        }
         else
-            ImGui::TextDisabled("<site:%08X>",
-                                static_cast<unsigned>(e.dwSiteHash));
-        ImGui::Separator();
-        ImGui::PushTextWrapPos(540.0f);
-        ImGui::TextUnformatted(e.sMessage.c_str());
-        ImGui::PopTextWrapPos();
+        {
+            ImGui::TextColored(LogPanel::LevelColor(b.iMaxLevel),
+                               "%u events  (max: %s)",
+                               static_cast<unsigned>(b.uCount),
+                               LogPanel::LevelLabel(b.iMaxLevel));
+            ImGui::Separator();
+            ImGui::TextDisabled("Zoom in to resolve individual entries.");
+            ImGui::PushTextWrapPos(540.0f);
+            ImGui::TextDisabled("First: ");
+            ImGui::SameLine();
+            ImGui::TextUnformatted(e.sMessage.c_str());
+            ImGui::PopTextWrapPos();
+        }
         ImGui::EndTooltip();
 
         if (bClick)
@@ -1682,8 +1807,11 @@ bool WaveformRenderer::Render(const ImVec2& size, bool bAutoScroll,
     else if (m_bNavPending)
     {
         m_bNavPending = false;
-        double dHalfWin = (m_dXLimitMax - m_dXLimitMin) * 0.5;
+        double dHalfWin = (m_dNavTargetSpan > 0.0)
+            ? (m_dNavTargetSpan * 0.5)
+            : ((m_dXLimitMax - m_dXLimitMin) * 0.5);
         if (dHalfWin <= 0.0) dHalfWin = 7.5;
+        m_dNavTargetSpan = 0.0;
         dForcedXMin = m_dNavTarget - dHalfWin;
         dForcedXMax = m_dNavTarget + dHalfWin;
         bForceX = true;

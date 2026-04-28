@@ -14,6 +14,12 @@
 #include <cstring>
 #include <ctime>
 
+#ifdef _WIN32
+#  define WIN32_LEAN_AND_MEAN
+#  include <Windows.h>
+#  include <commdlg.h>
+#endif
+
 // ── Severity colour palette ─────────────────────────────────────────────────
 //
 // Colours match the design proposal (Phase L4.4): WARN amber, ERROR
@@ -80,6 +86,106 @@ static void FormatWallNs(uint64_t qwWallNs, char* buf, size_t sz)
                   static_cast<unsigned long long>(qwUs));
 }
 
+// Compact UTC timestamp (YYYYMMDDTHHMMSSZ) for filenames.  Buffer must
+// hold at least 17 chars including NUL.
+static void FormatWallNsCompact(uint64_t qwWallNs, char* buf, size_t sz)
+{
+    const uint64_t qwSec = qwWallNs / 1000000000ULL;
+    std::time_t t = static_cast<std::time_t>(qwSec);
+    std::tm tm{};
+#ifdef _WIN32
+    gmtime_s(&tm, &t);
+#else
+    gmtime_r(&t, &tm);
+#endif
+    std::snprintf(buf, sz, "%04d%02d%02dT%02d%02d%02dZ",
+                  tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
+                  tm.tm_hour, tm.tm_min, tm.tm_sec);
+}
+
+// Replace any character that is not a portable filename character with
+// an underscore.  Mirrors the policy used by other kv8 tools (alnum,
+// '.', '_', '-' kept verbatim).  The session label can carry slashes
+// and spaces so we cannot pass it through unchanged.
+static std::string SanitiseForFilename(const std::string& s)
+{
+    std::string out;
+    out.reserve(s.size());
+    for (char c : s)
+    {
+        const unsigned char u = static_cast<unsigned char>(c);
+        const bool bSafe =
+            (u >= 'A' && u <= 'Z') || (u >= 'a' && u <= 'z') ||
+            (u >= '0' && u <= '9') || u == '.' || u == '_' || u == '-';
+        out.push_back(bSafe ? c : '_');
+    }
+    if (out.empty()) out = "trace_log";
+    return out;
+}
+
+// ----------------------------------------------------------------------------
+// Auto-resolve helper.  Given a freshly-selected log entry, narrow the
+// telemetry X span so the selected WARN/ERROR/FATAL marker is well clear
+// of its nearest WARN+ neighbour on the timeline.  Only zooms in -- if
+// the current span already resolves the entry, the requested span equals
+// the current span (so no visible change beyond a re-centre).
+//
+// Triggering rules:
+//   * Only WARN+ entries (DEBUG/INFO never get a marker).
+//   * Always centres the view on the selected entry.
+//   * Span = max(8 * neighbour_distance, 1 second), capped to current span.
+//   * No neighbour at all -> centre with a small default span (5 s),
+//     still capped to current span so we never zoom out.
+// ----------------------------------------------------------------------------
+static void AutoResolveSelection(WaveformRenderer*       pWaveform,
+                                  const LogStore::Entry&  selected,
+                                  const std::vector<LogStore::Entry>& entries)
+{
+    if (!pWaveform)                                         return;
+    if (static_cast<int>(selected.eLevel) < 2)              return;  // WARN+ only
+
+    // Walk all entries to find the closest WARN+ neighbour in time.
+    uint64_t qwBestDtNs = ~0ULL;
+    for (const auto& e : entries)
+    {
+        if (e.tsNs == selected.tsNs)                        continue;
+        if (static_cast<int>(e.eLevel) < 2)                 continue;
+        const uint64_t qwDt = (e.tsNs > selected.tsNs)
+            ? (e.tsNs - selected.tsNs)
+            : (selected.tsNs - e.tsNs);
+        if (qwDt < qwBestDtNs) qwBestDtNs = qwDt;
+    }
+
+    double dXMin = 0.0, dXMax = 0.0;
+    pWaveform->GetVisibleXLimits(dXMin, dXMax);
+    const double dCurSpanSec = dXMax - dXMin;
+    if (dCurSpanSec <= 0.0)    return;
+
+    // Margin factor: neighbour should sit at ~4x the bucket width away so
+    // the LOD aggregator (4 px buckets, ~250 buckets across the plot)
+    // keeps the selection in its own bucket.  Solving:
+    //   neighbour_distance >= 4 * (span / 250)  ==>  span <= 62.5 * neighbour
+    // Using 60 keeps the maths round.
+    static constexpr double kSpanPerNeighbourSec = 60.0;
+    static constexpr double kMinSpanSec          =  1.0;
+    static constexpr double kNoNeighbourSpanSec  =  5.0;
+
+    double dTargetSpanSec = kNoNeighbourSpanSec;
+    if (qwBestDtNs != ~0ULL)
+    {
+        const double dDtSec = static_cast<double>(qwBestDtNs) * 1.0e-9;
+        dTargetSpanSec = dDtSec * kSpanPerNeighbourSec;
+        if (dTargetSpanSec < kMinSpanSec) dTargetSpanSec = kMinSpanSec;
+    }
+    // Never zoom out -- this mode only ever tightens the view.
+    if (dTargetSpanSec > dCurSpanSec) dTargetSpanSec = dCurSpanSec;
+    if (dTargetSpanSec <= 0.0)        return;
+
+    const double dCenterRel =
+        static_cast<double>(selected.tsNs) * 1.0e-9 - pWaveform->GetSessionOrigin();
+    pWaveform->NavigateToWithSpan(dCenterRel, dTargetSpanSec);
+}
+
 void LogPanel::Render(WaveformRenderer* pWaveform)
 {
     if (!m_bVisible)  return;
@@ -102,19 +208,52 @@ void LogPanel::Render(WaveformRenderer* pWaveform)
         // at this timestamp on every plot.  Pushed unconditionally each
         // frame so deselection (m_qwSelectedTsNs == 0) clears the line.
         pWaveform->SetSelectedLogTsNs(m_qwSelectedTsNs);
+
+        // Auto-resolve: when enabled, a freshly-selected WARN+ entry that
+        // would aggregate into a multi-entry LOD bucket triggers a one-
+        // shot zoom-in tight enough to separate it from its neighbours.
+        // Memoised by m_qwLastResolvedTsNs so we do not re-zoom every
+        // frame while the same selection persists.
+        if (m_bAutoResolve && m_qwSelectedTsNs != 0 &&
+            m_qwSelectedTsNs != m_qwLastResolvedTsNs)
+        {
+            m_qwLastResolvedTsNs = m_qwSelectedTsNs;
+            const auto& entries = m_pStore->GetAll();
+            for (const auto& e : entries)
+            {
+                if (e.tsNs == m_qwSelectedTsNs)
+                {
+                    AutoResolveSelection(pWaveform, e, entries);
+                    break;
+                }
+            }
+        }
+        else if (m_qwSelectedTsNs == 0)
+        {
+            m_qwLastResolvedTsNs = 0;
+        }
     }
 
     // Reasonable default size/position so the window is visible the very
     // first time it pops up.  Persisted across sessions via imgui.ini.
-    // The "##" title disambiguator is the panel's instance address so
-    // multiple sessions don't collide on a shared "Trace Log" window.
+    // The "##" disambiguator must be STABLE across kv8scope runs so
+    // ImGui can match the saved entry in imgui.ini.  Earlier we used
+    // the LogPanel instance address (`%p`) here -- correct as a per-
+    // process disambiguator but the address changes every launch, so
+    // imgui.ini never restored size/position.  The session label is
+    // unique per ScopeWindow and stable across runs of the same
+    // session, so prefer it; fall back to a fixed string when no label
+    // is set yet (single-session edge case).
     ImGui::SetNextWindowSize(ImVec2(960.0f, 320.0f), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowPos(ImVec2(80.0f, 560.0f),  ImGuiCond_FirstUseEver);
 
-    char szTitle[64];
+    const std::string sIdSuffix = m_sSessionLabel.empty()
+        ? std::string("default")
+        : SanitiseForFilename(m_sSessionLabel);  // alnum / . / _ / -
+    char szTitle[160];
     std::snprintf(szTitle, sizeof(szTitle),
-                  "Trace Log##LogPanel_%p",
-                  static_cast<const void*>(this));
+                  "Trace Log##LogPanel_%s",
+                  sIdSuffix.c_str());
 
     if (!ImGui::Begin(szTitle, &m_bVisible))
     {
@@ -154,7 +293,11 @@ void LogPanel::Render(WaveformRenderer* pWaveform)
         m_pStore->SetTextFilter(m_szFilter);
     }
     ImGui::SameLine();
+    ImGui::BeginDisabled(!m_bSessionLive);
     ImGui::Checkbox("Follow", &m_bFollow);
+    ImGui::EndDisabled();
+    if (!m_bSessionLive && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+        ImGui::SetTooltip("Follow is only meaningful for live sessions.");
     ImGui::SameLine();
     if (ImGui::Checkbox("Sync", &m_bSync))
     {
@@ -165,20 +308,52 @@ void LogPanel::Render(WaveformRenderer* pWaveform)
         ImGui::SetTooltip("Keep the log row selection synchronised\n"
                           "with the waveform's visible window.");
     ImGui::SameLine();
+    ImGui::Checkbox("Auto-resolve", &m_bAutoResolve);
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("When a WARN/ERROR/FATAL entry is selected and the\n"
+                          "telemetry zoom is too coarse, narrow the X range\n"
+                          "just enough to separate the entry from its\n"
+                          "neighbours on the timeline.  Never zooms out.");
+    ImGui::SameLine();
     ImGui::Text("| Visible: %zu / %zu",
                 m_pStore->CountVisible(),
                 m_pStore->GetAll().size());
 
+    ImGui::SameLine();
+    if (ImGui::Button("Export..."))
+        m_bShowExportDialog = true;
+
     ImGui::Separator();
 
     // ── Visible X range from the waveform (for in-window highlight) ────────
+    // GetVisibleXLimits() is session-relative seconds, but LogStore::Entry
+    // timestamps are absolute Unix-epoch ns.  Add the session origin
+    // before converting -- without this, every entry falls outside the
+    // window because session-relative ns (~10^10) is dwarfed by absolute
+    // Unix ns (~10^18) and no row ever passes the in-window filter.
     double dXMin = 0.0, dXMax = 0.0;
     if (pWaveform)
         pWaveform->GetVisibleXLimits(dXMin, dXMax);
+    const double dOrigin = pWaveform ? pWaveform->GetSessionOrigin() : 0.0;
     const uint64_t tsMinNs =
-        (dXMin > 0.0) ? static_cast<uint64_t>(dXMin * 1.0e9) : 0ULL;
+        (dXMin > 0.0) ? static_cast<uint64_t>((dXMin + dOrigin) * 1.0e9) : 0ULL;
     const uint64_t tsMaxNs =
-        (dXMax > 0.0) ? static_cast<uint64_t>(dXMax * 1.0e9) : ~0ULL;
+        (dXMax > 0.0) ? static_cast<uint64_t>((dXMax + dOrigin) * 1.0e9) : ~0ULL;
+
+    // Auto-deselect when the selected entry has scrolled out of the
+    // waveform's visible window.  Without this, a stale selection
+    // persists on the timeline (halo + dashed cursor at an off-screen
+    // X coordinate) and a subsequent click on a different marker
+    // sometimes failed to register on the first attempt -- the panel
+    // was still pinned to the previous selection on that frame and
+    // only updated on the next.  Dropping the selection here also
+    // matches user intent: out-of-view means out-of-context.
+    if (m_qwSelectedTsNs != 0 && pWaveform && dXMax > dXMin &&
+        (m_qwSelectedTsNs < tsMinNs || m_qwSelectedTsNs > tsMaxNs))
+    {
+        m_qwSelectedTsNs     = 0;
+        m_qwLastResolvedTsNs = 0;
+    }
 
     // ── Sync mode: when the waveform window moves, snap the table's
     // selection to the newest entry inside the new window.  This keeps
@@ -294,6 +469,14 @@ void LogPanel::Render(WaveformRenderer* pWaveform)
                     // graphs render empty.
                     const double dAbs = static_cast<double>(e.tsNs) * 1.0e-9;
                     pWaveform->NavigateTo(dAbs - pWaveform->GetSessionOrigin());
+                    // Run AutoResolve immediately too so a single click
+                    // produces a single combined pan + zoom on the next
+                    // frame instead of pan now / zoom one frame later.
+                    if (m_bAutoResolve)
+                    {
+                        AutoResolveSelection(pWaveform, e, entries);
+                        m_qwLastResolvedTsNs = e.tsNs;
+                    }
                 }
             }
 
@@ -333,10 +516,199 @@ void LogPanel::Render(WaveformRenderer* pWaveform)
             ImGui::PopID();
         }
 
-        if (m_bFollow && !m_bScrollToSelection)
+        if (m_bFollow && m_bSessionLive && !m_bScrollToSelection)
             ImGui::SetScrollHereY(1.0f);
 
         ImGui::EndTable();
+    }
+
+    // ── Export-to-CSV dialog ──────────────────────────────────────────────
+    // Modal popup driven by the toolbar's [Export...] button.  Three knobs:
+    //   1. Range -- All entries vs. only those inside the telemetry plot's
+    //      visible X window (uses pWaveform->GetVisibleXLimits()).
+    //   2. Apply current filter -- when on, the level-mask checkboxes and
+    //      substring filter from the panel are reused; when off the export
+    //      contains every entry in the chosen range regardless of filter.
+    //   3. Output path -- editable + native file picker on Windows.
+    if (m_bShowExportDialog)
+    {
+        ImGui::OpenPopup("Export trace log to CSV##LogPanelExport");
+        m_bShowExportDialog = false;
+        // Each open starts a fresh suggestion -- the user may have
+        // changed sessions or chosen a different range since last time.
+        m_bExportPathAuto    = true;
+        m_szExportPath[0]    = '\0';
+        m_szExportStatus[0]  = '\0';
+    }
+
+    ImGui::SetNextWindowSize(ImVec2(560.0f, 0.0f), ImGuiCond_Appearing);
+    if (ImGui::BeginPopupModal("Export trace log to CSV##LogPanelExport",
+                                nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+    {
+        ImGui::Text("Range:");
+        ImGui::SameLine();
+        ImGui::RadioButton("All entries##logExpAll",     &m_iExportRange, 0);
+        ImGui::SameLine();
+        ImGui::RadioButton("Telemetry visible window##logExpVis",
+                           &m_iExportRange, 1);
+
+        ImGui::Checkbox("Apply current filter (level mask + text)",
+                        &m_bExportApplyFilter);
+
+        // Resolve the chosen time window now so the user can see the row
+        // count estimate before clicking Export.
+        uint64_t tsLoNs = 0ULL;
+        uint64_t tsHiNs = ~0ULL;
+        if (m_iExportRange == 1 && pWaveform)
+        {
+            // Same coordinate-frame fix as the in-window highlight:
+            // GetVisibleXLimits() is session-relative seconds, entries
+            // are absolute Unix-epoch ns -- add session origin first.
+            double dXMin = 0.0, dXMax = 0.0;
+            pWaveform->GetVisibleXLimits(dXMin, dXMax);
+            const double dOriginExp = pWaveform->GetSessionOrigin();
+            tsLoNs = (dXMin > 0.0)
+                ? static_cast<uint64_t>((dXMin + dOriginExp) * 1.0e9) : 0ULL;
+            tsHiNs = (dXMax > 0.0)
+                ? static_cast<uint64_t>((dXMax + dOriginExp) * 1.0e9) : ~0ULL;
+        }
+
+        const uint8_t      uMask    = m_bExportApplyFilter
+                                          ? m_pStore->GetLevelMask() : uint8_t{0x1Fu};
+        const std::string  sFilter  = m_bExportApplyFilter
+                                          ? m_pStore->GetTextFilter() : std::string{};
+
+        // Estimate -- O(N) over entries; cheap enough for an interactive
+        // dialog that opens on user click.
+        size_t nEstimate = 0;
+        for (const auto& e : m_pStore->GetAll())
+        {
+            if (e.tsNs < tsLoNs || e.tsNs > tsHiNs) continue;
+            const uint8_t bit = static_cast<uint8_t>(
+                1u << static_cast<unsigned>(e.eLevel));
+            if (!(uMask & bit)) continue;
+            if (!sFilter.empty() &&
+                e.sMessage.find(sFilter) == std::string::npos) continue;
+            ++nEstimate;
+        }
+        ImGui::TextDisabled("  Will export %zu of %zu entries",
+                            nEstimate, m_pStore->GetAll().size());
+
+        // Suggested filename: regenerated every frame as long as the
+        // user has not manually edited the path.  Long names are fine
+        // -- they encode the session, range and time window so files
+        // sort and self-document on disk.
+        if (m_bExportPathAuto)
+        {
+            // For "All entries" the chosen window is unbounded; use the
+            // store's actual time span instead so the filename reflects
+            // what is really being exported.
+            uint64_t tsLoLabel = tsLoNs;
+            uint64_t tsHiLabel = tsHiNs;
+            const auto& entries = m_pStore->GetAll();
+            if (m_iExportRange == 0 && !entries.empty())
+            {
+                tsLoLabel = entries.front().tsNs;
+                tsHiLabel = entries.back().tsNs;
+            }
+
+            const std::string sSession = SanitiseForFilename(
+                m_sSessionLabel.empty() ? std::string("trace_log")
+                                        : m_sSessionLabel);
+            const char* sRangeTag = (m_iExportRange == 0) ? "all" : "win";
+            const bool  bFiltered = m_bExportApplyFilter &&
+                                    (m_pStore->GetLevelMask() != 0x1Fu ||
+                                     !m_pStore->GetTextFilter().empty());
+
+            char szLo[24] = {};
+            char szHi[24] = {};
+            if (tsLoLabel != 0ULL && tsLoLabel != ~0ULL)
+                FormatWallNsCompact(tsLoLabel, szLo, sizeof(szLo));
+            if (tsHiLabel != 0ULL && tsHiLabel != ~0ULL)
+                FormatWallNsCompact(tsHiLabel, szHi, sizeof(szHi));
+
+            char szSuggested[1024];
+            if (szLo[0] && szHi[0])
+                std::snprintf(szSuggested, sizeof(szSuggested),
+                              "%s_log_%s_%s_to_%s%s.csv",
+                              sSession.c_str(), sRangeTag, szLo, szHi,
+                              bFiltered ? "_filt" : "");
+            else
+                std::snprintf(szSuggested, sizeof(szSuggested),
+                              "%s_log_%s%s.csv",
+                              sSession.c_str(), sRangeTag,
+                              bFiltered ? "_filt" : "");
+
+            std::strncpy(m_szExportPath, szSuggested,
+                         sizeof(m_szExportPath) - 1);
+            m_szExportPath[sizeof(m_szExportPath) - 1] = '\0';
+        }
+
+        ImGui::Separator();
+        ImGui::Text("Output file:");
+        ImGui::SetNextItemWidth(-120.0f);
+        if (ImGui::InputText("##logExportPath",
+                             m_szExportPath, sizeof(m_szExportPath)))
+        {
+            // Any keystroke pins the path -- stop overwriting it.
+            m_bExportPathAuto = false;
+        }
+#ifdef _WIN32
+        ImGui::SameLine();
+        if (ImGui::Button("Browse...##logExportBrowse"))
+        {
+            OPENFILENAMEA ofn{};
+            char szFile[1024];
+            std::strncpy(szFile, m_szExportPath, sizeof(szFile) - 1);
+            szFile[sizeof(szFile) - 1] = '\0';
+            ofn.lStructSize = sizeof(ofn);
+            ofn.lpstrFilter = "CSV files\0*.csv\0All files\0*.*\0";
+            ofn.lpstrFile   = szFile;
+            ofn.nMaxFile    = static_cast<DWORD>(sizeof(szFile));
+            ofn.lpstrDefExt = "csv";
+            ofn.Flags       = OFN_OVERWRITEPROMPT | OFN_NOCHANGEDIR;
+            if (GetSaveFileNameA(&ofn))
+            {
+                std::strncpy(m_szExportPath, szFile,
+                             sizeof(m_szExportPath) - 1);
+                // Browsing implies the user picked a specific path.
+                m_bExportPathAuto = false;
+            }
+        }
+#endif
+
+        ImGui::Separator();
+
+        const bool bCanExport = (m_szExportPath[0] != '\0');
+        if (!bCanExport) ImGui::BeginDisabled();
+        if (ImGui::Button("Export##logExportGo", ImVec2(100, 0)))
+        {
+            size_t nWritten = 0;
+            const bool bOk = m_pStore->ExportCSV(
+                tsLoNs, tsHiNs, uMask, sFilter,
+                std::string(m_szExportPath), &nWritten);
+            if (bOk)
+                std::snprintf(m_szExportStatus, sizeof(m_szExportStatus),
+                              "Saved %zu entries to %s",
+                              nWritten, m_szExportPath);
+            else
+                std::snprintf(m_szExportStatus, sizeof(m_szExportStatus),
+                              "ERROR: could not write %s",
+                              m_szExportPath);
+        }
+        if (!bCanExport) ImGui::EndDisabled();
+
+        ImGui::SameLine();
+        if (ImGui::Button("Close##logExportClose", ImVec2(100, 0)))
+            ImGui::CloseCurrentPopup();
+
+        if (m_szExportStatus[0])
+        {
+            ImGui::Separator();
+            ImGui::TextWrapped("%s", m_szExportStatus);
+        }
+
+        ImGui::EndPopup();
     }
 
     ImGui::End();

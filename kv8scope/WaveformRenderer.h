@@ -99,6 +99,13 @@ public:
     /// the view immediately snaps back to the live edge.
     void NavigateTo(double dTimestamp);
 
+    /// Same as NavigateTo() but also resizes the visible X span to
+    /// dSpanSec seconds, centred on dTimestamp.  Used by LogPanel's
+    /// auto-resolve mode to zoom in just enough so a selected high-
+    /// severity log entry no longer aggregates with its neighbours on
+    /// the timeline.  dSpanSec <= 0 falls back to NavigateTo() behaviour.
+    void NavigateToWithSpan(double dTimestamp, double dSpanSec);
+
     /// True if NavigateTo() was called since the last consume.  Used by
     /// ScopeWindow to drop out of live auto-scroll when any panel
     /// (annotations, log, future) requests a programmatic seek.
@@ -442,6 +449,7 @@ private:
     // Pending programmatic X navigation (set by NavigateTo, consumed in Render).
     bool    m_bNavPending  = false;
     double  m_dNavTarget   = 0.0;
+    double  m_dNavTargetSpan = 0.0;   // > 0 forces a specific span width
     bool    m_bNavRequested = false;  // sticky flag for ConsumeNavRequested()
 
     // Last log-marker click on the waveform (consumed by LogPanel).
