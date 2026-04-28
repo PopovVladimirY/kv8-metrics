@@ -261,12 +261,16 @@ Telemetry is complete. Trace is not started.
 
 A trace message is fundamentally different from a telemetry sample:
 - It is a string (format + args), not a numeric value.
+- The format string shall be transmitted once and recoded into the regestry. 
+  Only args are sent after that with reference to regestry.
 - It carries a severity level (Debug / Info / Warning / Error / Fatal).
-- It may carry a source location (file, line, function).
+- It shall carry a source location (file, line, function).
 - It is stored in a dedicated Kafka topic: `<channel>.<sessionID>._log`.
 - It does not have a counter ID or a Y-axis range.
 - kv8scope should display trace messages as event markers on the time axis,
   not as waveforms.
+- a separate window shall display log in a table format. 
+- navigation on telemetry timeline and log list shall be synchronized
 
 ### 4.2 Current state -- what exists
 

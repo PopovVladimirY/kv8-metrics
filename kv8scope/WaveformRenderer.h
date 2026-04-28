@@ -278,6 +278,16 @@ public:
         return true;
     }
 
+    // ---- Trace-log marker support (Phase L4) --------------------------
+
+    /// Attach the session's log store.  WaveformRenderer does not own the
+    /// store; ScopeWindow owns it and passes the raw pointer here.
+    void SetLogStore(class LogStore* p) { m_pLogStore = p; }
+
+    /// Master visibility toggle for trace-log event markers.  Default on.
+    void SetLogMarkersVisible(bool b) { m_bLogMarkersVisible = b; }
+    bool GetLogMarkersVisible() const { return m_bLogMarkersVisible; }
+
 private:
     static constexpr double kNaN        = std::numeric_limits<double>::quiet_NaN();
     static constexpr double kMaxLiveSpan = 15.0;  // maximum live window in seconds
@@ -453,6 +463,10 @@ private:
     bool             m_bAnnotationReq           = false;
     double           m_dAnnotationReqTime       = 0.0;
 
+    // ---- Trace-log marker state (Phase L4) -----------------------------
+    class LogStore*  m_pLogStore                = nullptr;
+    bool             m_bLogMarkersVisible       = true;
+
     // ---- Private helpers ------------------------------------------------
 
     /// Assign visible counters to panels (called at the top of each Render() frame).
@@ -470,6 +484,11 @@ private:
     /// Draw annotation markers (dashed vertical lines + flag labels).
     /// Must be called inside a BeginPlot / EndPlot block.
     void RenderAnnotationsInPlot();
+
+    /// Draw trace-log event markers (filled triangles at plot bottom)
+    /// for WARN/ERROR/FATAL entries.  Must be called inside a BeginPlot
+    /// / EndPlot block.  Phase L4.
+    void RenderLogMarkersInPlot();
 
     /// Decimate [pTS,pVS,N] into at most W pixel-column avg samples.
     /// Results written into m_scratchX (x midpoints) and m_scratchY (avg).

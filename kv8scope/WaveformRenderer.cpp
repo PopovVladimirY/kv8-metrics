@@ -3,6 +3,8 @@
 
 #include "WaveformRenderer.h"
 #include "ConfigStore.h"
+#include "LogStore.h"
+#include "LogPanel.h"
 
 #include <algorithm>
 #include <chrono>
@@ -1062,6 +1064,124 @@ void WaveformRenderer::RenderAnnotationsInPlot()
 }
 
 // ---------------------------------------------------------------------------
+// RenderLogMarkersInPlot (Phase L4) -- draw filled triangles at the bottom
+// of the plot for trace-log entries with severity WARN, ERROR, or FATAL.
+// DEBUG and INFO are intentionally excluded from the timeline so the plot
+// is not cluttered with routine traffic; they are still visible in the
+// LogPanel.  Hovering a marker opens a tooltip with file:line + message;
+// left-click navigates the viewport to the entry's timestamp.
+//
+// Triangle geometry: 8 px wide, 10 px tall, anchored at the plot's bottom
+// edge with the apex pointing up.  Colours match LogPanel::LevelColor().
+//
+// Must be called inside a BeginPlot / EndPlot block.
+// ---------------------------------------------------------------------------
+
+void WaveformRenderer::RenderLogMarkersInPlot()
+{
+    if (!m_pLogStore)
+        return;
+
+    const auto& entries = m_pLogStore->GetAll();
+    if (entries.empty())
+        return;
+
+    ImDrawList*   pDL    = ImPlot::GetPlotDrawList();
+    const ImVec2  pMin   = ImPlot::GetPlotPos();
+    const ImVec2  pSize  = ImPlot::GetPlotSize();
+    const float   fBaseY = pMin.y + pSize.y;            // plot bottom (px)
+    const float   fLeftX = pMin.x;
+    const float   fRightX= pMin.x + pSize.x;
+
+    static constexpr float kHalfW = 4.0f;   // half marker width  (8 px total)
+    static constexpr float kTallH = 10.0f;  // marker height
+    static constexpr float kHitR  = 6.0f;   // hover proximity radius (px)
+
+    const ImVec2  vMouse  = ImGui::GetMousePos();
+    const bool    bHover  = ImPlot::IsPlotHovered();
+    const bool    bClick  = bHover &&
+                            ImGui::IsMouseClicked(ImGuiMouseButton_Left) &&
+                            !ImGui::GetIO().KeyCtrl &&
+                            !ImGui::GetIO().KeyShift;
+
+    int iBestEntry = -1;
+    float fBestDist2 = kHitR * kHitR;
+
+    for (size_t i = 0; i < entries.size(); ++i)
+    {
+        const LogStore::Entry& e = entries[i];
+
+        // Severity filter: only WARN(2)/ERROR(3)/FATAL(4) on the timeline.
+        const int iLvl = static_cast<int>(e.eLevel);
+        if (iLvl < 2)
+            continue;
+
+        // Map ns -> session-relative seconds, then to screen X.
+        const double dRel = (static_cast<double>(e.tsNs) * 1.0e-9)
+                          - m_dSessionOrigin;
+        if (dRel < m_dXLimitMin || dRel > m_dXLimitMax)
+            continue;
+
+        const ImVec2 pt = ImPlot::PlotToPixels(dRel, 0.0);
+        const float  fX = pt.x;
+        if (fX < fLeftX || fX > fRightX)
+            continue;
+
+        const ImVec4 col4 = LogPanel::LevelColor(iLvl);
+        const ImU32  col  = ImGui::ColorConvertFloat4ToU32(col4);
+        const ImU32  colEdge = IM_COL32(0, 0, 0, 200);
+
+        const ImVec2 a(fX,         fBaseY - kTallH);  // apex
+        const ImVec2 b(fX - kHalfW, fBaseY);          // bottom-left
+        const ImVec2 c(fX + kHalfW, fBaseY);          // bottom-right
+        pDL->AddTriangleFilled(a, b, c, col);
+        pDL->AddTriangle(a, b, c, colEdge, 1.0f);
+
+        if (bHover)
+        {
+            const float fDx = vMouse.x - fX;
+            // Restrict the hover Y band to the marker neighbourhood.
+            if (vMouse.y >= fBaseY - kTallH - 4.0f &&
+                vMouse.y <= fBaseY + 4.0f)
+            {
+                const float fD2 = fDx * fDx;
+                if (fD2 < fBestDist2)
+                {
+                    fBestDist2 = fD2;
+                    iBestEntry = static_cast<int>(i);
+                }
+            }
+        }
+    }
+
+    if (iBestEntry >= 0)
+    {
+        const LogStore::Entry& e = entries[iBestEntry];
+
+        ImGui::BeginTooltip();
+        ImGui::TextColored(LogPanel::LevelColor(static_cast<int>(e.eLevel)),
+                           "%s", LogPanel::LevelLabel(static_cast<int>(e.eLevel)));
+        ImGui::SameLine();
+        if (e.bSiteResolved)
+            ImGui::Text("%s:%u  %s",
+                        e.sFile.c_str(),
+                        static_cast<unsigned>(e.dwLine),
+                        e.sFunc.c_str());
+        else
+            ImGui::TextDisabled("<site:%08X>",
+                                static_cast<unsigned>(e.dwSiteHash));
+        ImGui::Separator();
+        ImGui::PushTextWrapPos(540.0f);
+        ImGui::TextUnformatted(e.sMessage.c_str());
+        ImGui::PopTextWrapPos();
+        ImGui::EndTooltip();
+
+        if (bClick)
+            NavigateTo(static_cast<double>(e.tsNs) * 1.0e-9);
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Custom time-axis formatter -- HH:MM:SS.mmm
 // ---------------------------------------------------------------------------
 
@@ -1839,6 +1959,10 @@ bool WaveformRenderer::Render(const ImVec2& size, bool bAutoScroll,
             // ---- 8h. Annotation markers in every panel. ----------------
             if (m_pAnnotations && m_bAnnotationsVisible)
                 RenderAnnotationsInPlot();
+
+            // ---- 8h2. Trace-log event markers (Phase L4). --------------
+            if (m_pLogStore && m_bLogMarkersVisible)
+                RenderLogMarkersInPlot();
 
             // ---- 8i. Ctrl+click: request new annotation. ---------------
             if (ImPlot::IsPlotHovered() && io.KeyCtrl &&

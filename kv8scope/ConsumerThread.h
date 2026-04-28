@@ -31,6 +31,7 @@ namespace kv8 { class IKv8Consumer; }
 class AnnotationStore;
 class ConfigStore;
 class StatsEngine;
+class LogStore;
 
 class ConsumerThread
 {
@@ -75,6 +76,23 @@ public:
     {
         m_pAnnotationStore = pStore;
         m_sAnnotationTopic = std::move(sTopic);
+    }
+
+    /// Attach a LogStore plus the per-session log and channel registry topics.
+    /// When set, the consumer thread subscribes to both topics for live
+    /// updates: ._log records go to PushLogRecordFromKafka(), KV8_CID_LOG_SITE
+    /// records on ._registry go to PushLogSiteFromKafka().  No historical
+    /// replay is needed for ._log because pre-session entries are not relevant
+    /// to the current run; site descriptors are seeded by SeedLogSites() in
+    /// the caller after DiscoverSessions returns.
+    /// Must be called before Start().  pStore may be nullptr (feature off).
+    void SetLogStore(LogStore* pStore,
+                     std::string sLogTopic,
+                     std::string sRegistryTopic)
+    {
+        m_pLogStore       = pStore;
+        m_sLogTopic       = std::move(sLogTopic);
+        m_sRegistryTopic  = std::move(sRegistryTopic);
     }
 
     /// Set the ._ctl topic for counter enable/disable command reception.
@@ -166,6 +184,12 @@ private:
     /// Plain pointer (no ownership); lifetime managed by ScopeWindow.
     AnnotationStore* m_pAnnotationStore = nullptr;
     std::string      m_sAnnotationTopic;
+
+    /// LogStore pointer -- set before Start(), read on consumer thread.
+    /// Plain pointer (no ownership); lifetime managed by ScopeWindow.
+    LogStore*   m_pLogStore = nullptr;
+    std::string m_sLogTopic;
+    std::string m_sRegistryTopic;
 
     // ---- Counter enable/disable state (._ctl topic) ---------------------
 

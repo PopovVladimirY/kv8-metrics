@@ -65,7 +65,8 @@ foreach(test_name
         test_compile_out
         test_null_lib
         test_default_channel
-        test_monotonic)
+        test_monotonic
+        test_log_wire)
 
     add_executable(${test_name} test/${test_name}.cpp)
 

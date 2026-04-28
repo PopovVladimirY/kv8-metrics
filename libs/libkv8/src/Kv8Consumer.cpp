@@ -142,7 +142,8 @@ static void ParseRegistryRecord(const void                         *pPayload,
                                 const std::string                  &sChannel,
                                 std::map<std::string, SessionMeta> &sessions,
                                 std::set<std::string>              &deletedPrefixes,
-                                std::map<uint32_t, std::string>    &schemaCache)
+                                std::map<uint32_t, std::string>    &schemaCache,
+                                std::map<uint32_t, SessionMeta::LogSiteRecord> &channelLogSites)
 {
     if (cbPayload < sizeof(KafkaRegistryRecord)) return;
 
@@ -159,6 +160,26 @@ static void ParseRegistryRecord(const void                         *pPayload,
         return;
 
     const char *pVar = reinterpret_cast<const char*>(r + 1);
+
+    // Trace-log call-site descriptor (KV8_CID_LOG_SITE):
+    // wTopicLen is 0; wNameLen carries the packed Kv8LogSiteInfo tail.
+    // These records are channel-wide (compacted, one per call site) and
+    // are merged into every SessionMeta after the registry scan completes.
+    if (r->wCounterID == KV8_CID_LOG_SITE)
+    {
+        Kv8LogSiteInfo info;
+        if (Kv8DecodeLogSiteTail(pVar, r->wNameLen, info))
+        {
+            SessionMeta::LogSiteRecord rec;
+            rec.sFile  = std::string(info.sFile);
+            rec.sFunc  = std::string(info.sFunc);
+            rec.sFmt   = std::string(info.sFmt);
+            rec.dwLine = info.dwLine;
+            channelLogSites[r->dwHash] = std::move(rec);
+        }
+        return;
+    }
+
     std::string sName(pVar, r->wNameLen);
     std::string sTopic(pVar + r->wNameLen, r->wTopicLen);
 
@@ -861,6 +882,7 @@ Kv8ConsumerImpl::DiscoverSessions(const std::string &sChannel)
     std::map<std::string, SessionMeta> sessions;
     std::set<std::string> deletedPrefixes;
     std::map<uint32_t, std::string> schemaCache;
+    std::map<uint32_t, SessionMeta::LogSiteRecord> channelLogSites;
 
     char errstr[512];
     rd_kafka_conf_t *pConf = rd_kafka_conf_new();
@@ -938,7 +960,7 @@ Kv8ConsumerImpl::DiscoverSessions(const std::string &sChannel)
         else
         {
             ++nRead;
-            ParseRegistryRecord(pMsg->payload, pMsg->len, sChannel, sessions, deletedPrefixes, schemaCache);
+            ParseRegistryRecord(pMsg->payload, pMsg->len, sChannel, sessions, deletedPrefixes, schemaCache, channelLogSites);
         }
         rd_kafka_message_destroy(pMsg);
     }
@@ -1093,6 +1115,14 @@ Kv8ConsumerImpl::DiscoverSessions(const std::string &sChannel)
     // Filter out tombstoned sessions.
     for (const auto &prefix : deletedPrefixes)
         sessions.erase(prefix);
+
+    // Distribute channel-wide trace-log call sites to every surviving session.
+    // Sites are compacted per channel; each session sees the union.
+    if (!channelLogSites.empty())
+    {
+        for (auto &kv : sessions)
+            kv.second.logSites = channelLogSites;
+    }
 
     return sessions;
 }

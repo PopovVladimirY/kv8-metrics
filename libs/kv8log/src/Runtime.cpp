@@ -206,6 +206,11 @@ static bool LoadVtable(void* lib, Vtable& v)
         LoadSym(lib, "kv8log_add_udt"));
     v.add_udt_ts = reinterpret_cast<decltype(v.add_udt_ts)>(
         LoadSym(lib, "kv8log_add_udt_ts"));
+    // Optional trace log symbols (Phase L2).
+    v.register_log_site = reinterpret_cast<decltype(v.register_log_site)>(
+        LoadSym(lib, "kv8log_register_log_site"));
+    v.log = reinterpret_cast<decltype(v.log)>(
+        LoadSym(lib, "kv8log_log"));
     return true;
 }
 
@@ -294,6 +299,31 @@ uint64_t Runtime::MonotonicToNs(uint64_t mono_ns)
     void* h = GetDefaultChannelHandle();
     if (!h) return 0;
     return fn.monotonic_to_ns(h, mono_ns);
+}
+
+uint32_t Runtime::RegisterLogSite(const char* file, uint16_t file_len,
+                                  const char* func, uint16_t func_len,
+                                  uint32_t    line,
+                                  const char* fmt,  uint16_t fmt_len)
+{
+    const Vtable& fn = Fn();
+    if (!fn.register_log_site) return 1u;       // runtime absent: benign sentinel
+    void* h = GetDefaultChannelHandle();
+    if (!h) return 1u;
+    uint32_t r = fn.register_log_site(h, file, file_len, func, func_len,
+                                       line, fmt, fmt_len);
+    return r ? r : 1u;
+}
+
+void Runtime::Log(uint32_t site_hash, uint8_t level,
+                  const void* payload, uint16_t payload_len,
+                  uint8_t flags)
+{
+    const Vtable& fn = Fn();
+    if (!fn.log) return;
+    void* h = GetDefaultChannelHandle();
+    if (!h) return;
+    fn.log(h, site_hash, level, payload, payload_len, flags);
 }
 
 // ── Config accessor (used by Channel.cpp) ──────────────────────────────────

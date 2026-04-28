@@ -3,6 +3,7 @@
 
 #include "ConsumerThread.h"
 #include "AnnotationStore.h"
+#include "LogStore.h"
 #include "ConfigStore.h"
 #include "StatsEngine.h"
 
@@ -255,6 +256,16 @@ void ConsumerThread::Run()
     if (!m_sCtlTopic.empty())
         pConsumer->Subscribe(m_sCtlTopic);
 
+    // Subscribe to ._log (per-session) and ._registry (channel-wide) for
+    // trace-log records and live KV8_CID_LOG_SITE registrations.  No historical
+    // replay is performed: pre-session entries are not relevant to the current
+    // run; site descriptors loaded by DiscoverSessions are already seeded into
+    // the LogStore by the caller.
+    if (m_pLogStore && !m_sLogTopic.empty())
+        pConsumer->Subscribe(m_sLogTopic);
+    if (m_pLogStore && !m_sRegistryTopic.empty())
+        pConsumer->Subscribe(m_sRegistryTopic);
+
     m_bConnected.store(true, std::memory_order_relaxed);
 
     // Launch background replay thread for annotation & ctl history.
@@ -329,6 +340,30 @@ void ConsumerThread::Run()
             sTopic == m_sAnnotationTopic)
         {
             m_pAnnotationStore->PushFromKafka(std::string{}, pPayload, cbPayload);
+            return;
+        }
+
+        // ---- Trace-log topic (binary Kv8LogRecord, Phase L4) --------------
+        if (m_pLogStore &&
+            !m_sLogTopic.empty() &&
+            sTopic.size() == m_sLogTopic.size() &&
+            sTopic == m_sLogTopic)
+        {
+            m_pLogStore->PushLogRecordFromKafka(pPayload, cbPayload);
+            return;
+        }
+
+        // ---- Channel registry topic (filter for KV8_CID_LOG_SITE) ---------
+        // The registry carries multiple record kinds; LogStore filters by
+        // wCounterID internally.  Other record kinds (groups, schemas,
+        // annotations) on this topic are ignored here -- they were already
+        // consumed by DiscoverSessions during session enumeration.
+        if (m_pLogStore &&
+            !m_sRegistryTopic.empty() &&
+            sTopic.size() == m_sRegistryTopic.size() &&
+            sTopic == m_sRegistryTopic)
+        {
+            m_pLogStore->PushLogSiteFromKafka(pPayload, cbPayload);
             return;
         }
 

@@ -119,6 +119,12 @@ private:
     std::unique_ptr<StatsPanel> m_pStatsPanel;
     bool m_bShowStats = false;
 
+    // Trace-log store + panel (Phase L4) -- dockable table of decoded log
+    // records with severity badges, text filter, and click-to-seek.
+    // Toggled with Ctrl+L.  Both lifetimes are owned by this ScopeWindow.
+    std::unique_ptr<class LogStore> m_pLogStore;
+    std::unique_ptr<class LogPanel> m_pLogPanel;
+
     // Msg/s rate tracking for the status bar.
     uint64_t m_nPrevMsgCount  = 0;
     float    m_fPrevRateTime  = 0.0f;

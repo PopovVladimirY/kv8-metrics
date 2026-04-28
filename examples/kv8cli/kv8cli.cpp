@@ -32,6 +32,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <cinttypes>
+#include <ctime>
 #include <string>
 #include <map>
 #include <vector>
@@ -61,6 +62,16 @@ struct CounterInfo
 
 using RegistryMap  = std::map<uint32_t, std::map<uint16_t, CounterInfo>>;
 using HashGroupMap = std::map<uint32_t, std::string>;
+
+// hash -> log-site descriptor (file/line/func/format)
+struct LogSiteEntry
+{
+    std::string sFile;
+    std::string sFunc;
+    std::string sFmt;
+    uint32_t    dwLine = 0;
+};
+using LogSiteMap = std::map<uint32_t, LogSiteEntry>;
 
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -153,7 +164,8 @@ static bool ParseArgs(int argc, char *argv[], Config &o_cfg)
 // Returns the topic name to subscribe to (data topic for normal records,
 // log topic for the sentinel wCounterID=0xFFFE record).  Empty if absent/malformed.
 static std::string ProcessRegistryMessage(const void *pPayload, size_t cbPayload,
-                                          RegistryMap &registry, HashGroupMap &hashToGroup)
+                                          RegistryMap &registry, HashGroupMap &hashToGroup,
+                                          LogSiteMap &logSites)
 {
     if (cbPayload < sizeof(KafkaRegistryRecord))
         return {};
@@ -175,6 +187,36 @@ static std::string ProcessRegistryMessage(const void *pPayload, size_t cbPayload
 
     const char *pVarData = reinterpret_cast<const char*>(pPayload)
                            + sizeof(KafkaRegistryRecord);
+
+    // wCounterID=KV8_CID_LOG_SITE: trace-log call-site descriptor (Phase L1+).
+    // The variable tail is a packed Kv8LogSiteInfo (file/line/func/fmt).  No
+    // separate data topic is announced -- the log topic itself is published
+    // via the KV8_CID_LOG sentinel below.
+    if (pRec->wCounterID == KV8_CID_LOG_SITE)
+    {
+        Kv8LogSiteInfo info;
+        if (Kv8DecodeLogSiteTail(pVarData, pRec->wNameLen, info))
+        {
+            LogSiteEntry e;
+            e.sFile  = std::string(info.sFile);
+            e.sFunc  = std::string(info.sFunc);
+            e.sFmt   = std::string(info.sFmt);
+            e.dwLine = info.dwLine;
+            logSites[pRec->dwHash] = std::move(e);
+            printf("[LOGSITE] hash=%08X  %s:%u %s()  fmt=\"%s\"\n",
+                   pRec->dwHash,
+                   std::string(info.sFile).c_str(),
+                   info.dwLine,
+                   std::string(info.sFunc).c_str(),
+                   std::string(info.sFmt ).c_str());
+        }
+        else
+        {
+            fprintf(stderr, "[WARN] Malformed KV8_CID_LOG_SITE tail (hash=%08X cbTail=%u)\n",
+                    pRec->dwHash, (unsigned)pRec->wNameLen);
+        }
+        return {};
+    }
 
     std::string sName(pVarData, pRec->wNameLen);
     std::string sTopic(pVarData + pRec->wNameLen, pRec->wTopicLen);
@@ -268,15 +310,90 @@ static void ProcessDataMessage(const void *pPayload, size_t cbPayload,
 // â”€â”€ Process log message â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 ////////////////////////////////////////////////////////////////////////////////
 
-static void ProcessLogMessage(const void *pPayload, size_t cbPayload, int64_t tsKafkaMs)
+static const char* LogLevelName(uint8_t lvl)
+{
+    switch (lvl)
+    {
+        case 0: return "DEBUG";
+        case 1: return "INFO ";
+        case 2: return "WARN ";
+        case 3: return "ERROR";
+        case 4: return "FATAL";
+        default: return "?????";
+    }
+}
+
+static std::string FormatWallNs(uint64_t qwWallNs)
+{
+    // Convert ns since Unix epoch to ISO-8601 with microsecond precision.
+    using namespace std::chrono;
+    const uint64_t qwSec = qwWallNs / 1000000000ULL;
+    const uint64_t qwUs  = (qwWallNs % 1000000000ULL) / 1000ULL;
+    std::time_t t = static_cast<std::time_t>(qwSec);
+    std::tm tm{};
+#ifdef _WIN32
+    gmtime_s(&tm, &t);
+#else
+    gmtime_r(&t, &tm);
+#endif
+    char buf[64];
+    snprintf(buf, sizeof(buf), "%04d-%02d-%02dT%02d:%02d:%02d.%06lluZ",
+             tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
+             tm.tm_hour, tm.tm_min, tm.tm_sec,
+             static_cast<unsigned long long>(qwUs));
+    return std::string(buf);
+}
+
+static void ProcessLogMessage(const void *pPayload, size_t cbPayload, int64_t tsKafkaMs,
+                              const LogSiteMap &logSites)
 {
     if (cbPayload == 0 || pPayload == nullptr)
         return;
 
-    std::string sTimestamp = Kv8FormatKafkaTimestamp(tsKafkaMs);
-    std::string sMsg(reinterpret_cast<const char*>(pPayload), cbPayload);
+    Kv8LogRecord    hdr;
+    std::string_view sPayload;
+    if (!Kv8DecodeLogRecord(pPayload, cbPayload, hdr, sPayload))
+    {
+        // Fall back: print Kafka timestamp + raw bytes so corrupt records are
+        // still visible during diagnostics.  Caller has already classified the
+        // topic as ._log so this branch indicates a wire-format violation.
+        std::string sKaf = Kv8FormatKafkaTimestamp(tsKafkaMs);
+        fprintf(stderr, "[LOG-BAD] %s | malformed record (cb=%zu)\n",
+                sKaf.c_str(), cbPayload);
+        return;
+    }
 
-    printf("[LOG]  %s | %s\n", sTimestamp.c_str(), sMsg.c_str());
+    const std::string sTs = FormatWallNs(hdr.tsNs);
+    const char* pLevel = LogLevelName(hdr.bLevel);
+
+    auto it = logSites.find(hdr.dwSiteHash);
+    if (it != logSites.end())
+    {
+        const LogSiteEntry &e = it->second;
+        const std::string sMsg = (hdr.bFlags & KV8_LOG_FLAG_TEXT)
+                                   ? std::string(sPayload)
+                                   : std::string("<typed args, len=")
+                                       + std::to_string(sPayload.size()) + ">";
+        printf("[%s] [%s] [T:0x%08X CPU:%u] %s:%u %s()\n    %s\n",
+               sTs.c_str(), pLevel,
+               (unsigned)hdr.dwThreadID, (unsigned)hdr.wCpuID,
+               e.sFile.c_str(), (unsigned)e.dwLine, e.sFunc.c_str(),
+               sMsg.c_str());
+    }
+    else
+    {
+        // Site not yet registered -- print with hash placeholder.  This is
+        // expected at startup when log records arrive before their registry
+        // record (rare, only on first emission).
+        const std::string sMsg = (hdr.bFlags & KV8_LOG_FLAG_TEXT)
+                                   ? std::string(sPayload)
+                                   : std::string("<typed args, len=")
+                                       + std::to_string(sPayload.size()) + ">";
+        printf("[%s] [%s] [T:0x%08X CPU:%u] <site:%08X>\n    %s\n",
+               sTs.c_str(), pLevel,
+               (unsigned)hdr.dwThreadID, (unsigned)hdr.wCpuID,
+               hdr.dwSiteHash, sMsg.c_str());
+    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -359,6 +476,7 @@ int main(int argc, char *argv[])
     // -- Main consume loop ---------------------------------------------------
     RegistryMap  registry;
     HashGroupMap hashToGroup;
+    LogSiteMap   logSites;
 
     uint64_t qwMsgCount  = 0;
     uint64_t qwDataCount = 0;
@@ -393,14 +511,15 @@ int main(int argc, char *argv[])
             {
                 qwRegCount++;
                 std::string sNewTopic = ProcessRegistryMessage(pPayload, cbLen,
-                                                               registry, hashToGroup);
+                                                               registry, hashToGroup,
+                                                               logSites);
                 if (!sNewTopic.empty())
                     vPendingSubscribes.push_back(sNewTopic);
             }
             else if (nTopic >= 5 && sTopic.compare(nTopic - 5, 5, "._log") == 0)
             {
                 qwLogCount++;
-                ProcessLogMessage(pPayload, cbLen, tsMs);
+                ProcessLogMessage(pPayload, cbLen, tsMs, logSites);
             }
             else
             {

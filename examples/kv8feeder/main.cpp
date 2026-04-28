@@ -157,6 +157,56 @@ static void run_phases_feed(int hz, const std::atomic<bool>& stop)
     }
 }
 
+// ── Thread: log emitter ─────────────────────────────────────────────────────
+// Fires log records at every severity level on different periods so the
+// kv8scope LogPanel and timeline markers can be exercised end-to-end.
+// Periods are deliberately co-prime-ish so the rows interleave nicely.
+//   DEBUG  every  500 ms
+//   INFO   every 2000 ms
+//   WARN   every 5000 ms
+//   ERROR  every 11000 ms
+//   FATAL  every 23000 ms
+static void run_log_emitter(const std::atomic<bool>& stop)
+{
+    using Clock = std::chrono::steady_clock;
+    const auto t0 = Clock::now();
+    auto tDebug = t0, tInfo = t0, tWarn = t0, tErr = t0, tFatal = t0;
+    uint64_t qwDebug = 0, qwInfo = 0, qwWarn = 0, qwErr = 0, qwFatal = 0;
+
+    while (!stop.load(std::memory_order_relaxed)) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        const auto now = Clock::now();
+
+        if (now - tDebug >= std::chrono::milliseconds(500)) {
+            tDebug = now;
+            KV8_LOGF_DEBUG("debug tick #%llu",
+                           static_cast<unsigned long long>(++qwDebug));
+        }
+        if (now - tInfo >= std::chrono::milliseconds(2000)) {
+            tInfo = now;
+            const double dUptime = std::chrono::duration<double>(now - t0).count();
+            KV8_LOGF_INFO("uptime %.1fs  info tick #%llu",
+                          dUptime,
+                          static_cast<unsigned long long>(++qwInfo));
+        }
+        if (now - tWarn >= std::chrono::milliseconds(5000)) {
+            tWarn = now;
+            KV8_LOGF_WARN("warn tick #%llu  (synthetic threshold cross)",
+                          static_cast<unsigned long long>(++qwWarn));
+        }
+        if (now - tErr >= std::chrono::milliseconds(11000)) {
+            tErr = now;
+            KV8_LOGF_ERROR("error tick #%llu  (synthetic produce failure)",
+                           static_cast<unsigned long long>(++qwErr));
+        }
+        if (now - tFatal >= std::chrono::milliseconds(23000)) {
+            tFatal = now;
+            KV8_LOGF_FATAL("fatal tick #%llu  (synthetic unrecoverable)",
+                           static_cast<unsigned long long>(++qwFatal));
+        }
+    }
+}
+
 // ── main ────────────────────────────────────────────────────────────────────
 int main(int argc, char** argv)
 {
@@ -229,9 +279,13 @@ int main(int argc, char** argv)
             "[kv8feeder]   WeatherStation   @ 1 Hz    (UDT, sleep+spin)\n"
             "[kv8feeder]   Aerial/Navigation + Aerial/Attitude + Aerial/Motors  @ 1000 Hz (UDT+TS, spin)\n");
 
+    KV8_LOGF_INFO("kv8feeder starting: counter=%d wald=%d phases=%d udt=%d",
+                  hz_counter, hz_wald, hz_phases, bUdt ? 1 : 0);
+
     std::thread t1(run_counter_feed, hz_counter, std::cref(g_stop));
     std::thread t2(run_wald_feed,    hz_wald,    std::cref(g_stop));
     std::thread t3(run_phases_feed,  hz_phases,  std::cref(g_stop));
+    std::thread tLog(run_log_emitter, std::cref(g_stop));
     std::thread t4, t5;
     if (bUdt) {
         t4 = std::thread(RunWeatherStation, std::cref(g_stop));
@@ -249,10 +303,12 @@ int main(int argc, char** argv)
     t1.join();
     t2.join();
     t3.join();
+    tLog.join();
     if (t4.joinable()) t4.join();
     if (t5.joinable()) t5.join();
 
     fprintf(stdout, "[kv8feeder] flushing ...\n");
+    KV8_LOG_INFO("kv8feeder shutting down cleanly");
     KV8_TEL_FLUSH();
     fprintf(stdout, "[kv8feeder] done.\n");
     return 0;

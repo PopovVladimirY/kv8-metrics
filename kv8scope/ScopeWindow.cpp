@@ -7,6 +7,8 @@
 #include "CounterTree.h"
 #include "StatsEngine.h"
 #include "StatsPanel.h"
+#include "LogStore.h"
+#include "LogPanel.h"
 #include "WaveformRenderer.h"
 
 #include <kv8/IKv8Producer.h>
@@ -156,6 +158,31 @@ ScopeWindow::ScopeWindow(const std::string& sPrefix,
     m_pStatsPanel = std::make_unique<StatsPanel>();
     m_pStatsPanel->Init(m_meta);
 
+    // -----------------------------------------------------------------
+    // Trace-log pipeline (Phase L4).  The LogStore receives decoded
+    // Kv8LogRecord entries from ConsumerThread on the ._log topic, plus
+    // KV8_CID_LOG_SITE descriptors from ._registry.  Sites already known
+    // at session-discovery time are seeded directly from SessionMeta.
+    // -----------------------------------------------------------------
+    m_pLogStore = std::make_unique<LogStore>();
+    if (!m_meta.logSites.empty())
+        m_pLogStore->SeedLogSites(m_meta.logSites);
+
+    m_pLogPanel = std::make_unique<LogPanel>();
+    m_pLogPanel->SetLogStore(m_pLogStore.get());
+    m_pWaveform->SetLogStore(m_pLogStore.get());
+
+    {
+        // Channel name = sSessionPrefix with the trailing ".<sessionID>" stripped.
+        std::string sChannel = m_meta.sSessionPrefix;
+        if (sChannel.size() > m_meta.sSessionID.size() + 1)
+            sChannel.resize(sChannel.size() - m_meta.sSessionID.size() - 1);
+        const std::string sRegistryTopic = sChannel + "._registry";
+        m_pConsumer->SetLogStore(m_pLogStore.get(),
+                                 m_meta.sLogTopic,
+                                 sRegistryTopic);
+    }
+
     // All callbacks registered -- start ingesting data.
     m_pConsumer->Start();
 
@@ -292,6 +319,10 @@ bool ScopeWindow::Render()
     if (m_pAnnotations)
         m_pAnnotations->DrainPending();
 
+    // Drain trace-log records that arrived from Kafka (Phase L4).
+    if (m_pLogStore)
+        m_pLogStore->DrainPending();
+
     // Drain counter enable/disable records that arrived from Kafka (originating
     // from kv8log producer calls or another kv8scope instance).
     if (m_pConsumer && m_pCounterTree)
@@ -395,6 +426,15 @@ bool ScopeWindow::Render()
             m_pStatsPanel->ToggleVisible();
     }
 
+    // L4: Ctrl+L toggles the trace-log panel.
+    if (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) &&
+        ImGui::GetIO().KeyCtrl &&
+        ImGui::IsKeyPressed(ImGuiKey_L, false))
+    {
+        if (m_pLogPanel)
+            m_pLogPanel->ToggleVisible();
+    }
+
     // P8: Ctrl+N opens the annotation editor at the center of the visible window.
     if (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) &&
         ImGui::GetIO().KeyCtrl &&
@@ -427,6 +467,10 @@ bool ScopeWindow::Render()
     // P4.4: render the statistics panel (manages its own ImGui window).
     if (m_pStatsPanel)
         m_pStatsPanel->Render(m_pWaveform.get(), m_pStats.get());
+
+    // L4: render the trace-log panel (manages its own ImGui window).
+    if (m_pLogPanel)
+        m_pLogPanel->Render(m_pWaveform.get());
 
     // P8: render annotation editor popup and panel window.
     if (m_bShowAnnEditor)
@@ -501,6 +545,23 @@ void ScopeWindow::RenderToolbar()
     }
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Toggle statistics panel (Ctrl+I)");
+    ImGui::SameLine();
+
+    // L4: Trace-log panel toggle (also Ctrl+L), with live entry counter so
+    // the user has feedback even when the panel is closed.
+    {
+        const bool bLogOn = m_pLogPanel && m_pLogPanel->IsVisible();
+        const size_t nLog = m_pLogStore ? m_pLogStore->GetAll().size() : 0;
+        char szLabel[64];
+        std::snprintf(szLabel, sizeof(szLabel),
+                      bLogOn ? "[Log ON %zu]##log" : "[Log %zu]##log",
+                      nLog);
+        if (ImGui::SmallButton(szLabel) && m_pLogPanel)
+            m_pLogPanel->ToggleVisible();
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Toggle trace-log panel (Ctrl+L) -- %zu entries",
+                              nLog);
+    }
     ImGui::SameLine();
     ImGui::TextDisabled("|");
     ImGui::SameLine();

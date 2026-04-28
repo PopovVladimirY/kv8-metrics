@@ -231,6 +231,16 @@ void SessionListPanel::Render()
                         for (int k = 0; k < k_nSessionCols; ++k)
                             aSavedW[k] = twit->second[k];
                 }
+                // Sanity floor: a previous run may have persisted absurdly
+                // narrow widths (e.g. 4 px) which clip the cell content into
+                // invisibility.  Reject any saved value smaller than the
+                // natural width so the table is always usable.  The status
+                // column is NoResize, so a saved value here is always invalid
+                // and we fall back to the natural width unconditionally.
+                aSavedW[0] = 0.0f;
+                for (int k = 1; k < k_nSessionCols - 1; ++k)
+                    if (aSavedW[k] > 0.0f && aSavedW[k] < 16.0f)
+                        aSavedW[k] = 0.0f;
                 auto colW = [&](int k) -> float {
                     return (aSavedW[k] > 0.0f) ? aSavedW[k] : aDefaultW[k];
                 };

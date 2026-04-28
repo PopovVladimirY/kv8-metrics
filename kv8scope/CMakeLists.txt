@@ -114,6 +114,10 @@ set(KV8SCOPE_SOURCES
     StatsEngine.cpp
     StatsPanel.h
     StatsPanel.cpp
+    LogStore.h
+    LogStore.cpp
+    LogPanel.h
+    LogPanel.cpp
     FontManager.h
     FontManager.cpp
     ThemeManager.h

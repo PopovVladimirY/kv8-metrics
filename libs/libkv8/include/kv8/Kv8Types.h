@@ -139,7 +139,15 @@ static_assert(sizeof(Kv8UDTSample) == 16, "Kv8UDTSample must be 16 bytes");
 /// A variable-length tail immediately follows the fixed header:
 ///   [wNameLen bytes of UTF-8 name][wTopicLen bytes of UTF-8 Kafka topic name]
 ///
-/// Three record types are distinguished by wCounterID:
+/// Several record types are distinguished by wCounterID:
+///   KV8_CID_LOG_SITE(0xFFFB) -- log call-site descriptor (see Kv8LogRecord below).
+///                               dwHash = FNV-32 of (basename, line, function),
+///                               wNameLen = total tail length, wTopicLen = 0,
+///                               variable tail packs file/line/func/fmt strings.
+///                               Kafka message key = sprintf("%08X", dwHash) so log
+///                               compaction keeps exactly one record per call site.
+///   KV8_CID_SCHEMA  (0xFFFC) -- UDT schema: sName = schema display name,
+///                               sTopic = full JSON schema text.
 ///   KV8_CID_DELETED (0xFFFD) -- tombstone: session was deleted.  sName = session
 ///                               prefix, wTopicLen = 0.  Written by kv8maint after
 ///                               deleting session topics so DiscoverSessions() can
@@ -191,6 +199,9 @@ static const uint16_t KV8_CID_SCHEMA  = 0xFFFCu;
 
 /// wCounterID value that marks a session log-topic announcement.
 static const uint16_t KV8_CID_LOG     = 0xFFFEu;
+
+/// wCounterID value that marks a log call-site registry record (see Kv8LogRecord).
+static const uint16_t KV8_CID_LOG_SITE = 0xFFFBu;
 
 // Kv8 extension header field widths.
 static const int KV8_EXT_TYPE_BITS    = 5;
@@ -290,6 +301,230 @@ inline uint16_t Kv8UdtFieldWireSize(uint8_t nType)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+// Trace log wire format (Phase L1)
+////////////////////////////////////////////////////////////////////////////////
+//
+// Two record types:
+//
+//   1. Site descriptor record  -- written to <ch>._registry exactly once per
+//      call site per process run.  KafkaRegistryRecord with wCounterID =
+//      KV8_CID_LOG_SITE; wNameLen = total tail length, wTopicLen = 0.
+//      Tail layout (little-endian, packed):
+//          uint16_t wFileLen
+//          char     file[wFileLen]   (basename only, no terminator)
+//          uint32_t dwLine
+//          uint16_t wFuncLen
+//          char     func[wFuncLen]   (no terminator)
+//          uint16_t wFmtLen
+//          char     fmt [wFmtLen]    (UTF-8, display only, no terminator)
+//      Kafka message key = sprintf("%08X", dwHash) so log compaction keeps
+//      the latest value for each call site.
+//
+//   2. Data record (Kv8LogRecord, 28-byte fixed header + variable payload)
+//      -- written to <ch>.<sid>._log on every log emission.  Payload is
+//      pre-formatted UTF-8 text in the L2 path (bFlags bit 0 set) or packed
+//      typed args (Kv8LogArgType) in the future L2+ path.
+//
+// Source location (file/line/function) lives only in the registry record.
+// Data records carry only dwSiteHash (4 bytes), eliminating per-record
+// overhead for source-location strings.
+////////////////////////////////////////////////////////////////////////////////
+
+/// Severity level carried in Kv8LogRecord::bLevel.
+enum class Kv8LogLevel : uint8_t
+{
+    Debug   = 0,
+    Info    = 1,
+    Warning = 2,
+    Error   = 3,
+    Fatal   = 4,
+};
+static const uint8_t KV8_LOG_LEVEL_COUNT = 5u;
+
+/// Type tags used by the future packed-arg payload format (L2+).
+/// Not used in the L2 raw-text path; reserved here so the wire enum is stable.
+enum class Kv8LogArgType : uint8_t
+{
+    I32  = 0,   ///< int32_t  (4 bytes) -- covers int/short/char via promotion
+    U32  = 1,   ///< uint32_t (4 bytes)
+    I64  = 2,   ///< int64_t  (8 bytes)
+    U64  = 3,   ///< uint64_t (8 bytes)
+    F64  = 4,   ///< double   (8 bytes) -- covers float via promotion
+    STR  = 5,   ///< uint16_t length prefix + UTF-8 bytes (no null terminator)
+};
+
+/// Magic constant in Kv8LogRecord::dwMagic ("KV8T" little-endian).
+static const uint32_t KV8_LOG_MAGIC = 0x4B563854u;
+
+/// Maximum payload length (text or packed args) carried in one log record.
+/// Mirrors the producer-side stack buffer used by KV8_LOGF.
+static const uint16_t KV8_LOG_MAX_PAYLOAD = 4095u;
+
+/// bFlags bit 0: payload is pre-formatted UTF-8 text (L2 raw-text path).
+static const uint8_t KV8_LOG_FLAG_TEXT = 0x01u;
+
+#pragma pack(push, 1)
+
+/// Fixed 28-byte header of a single trace log record.  Followed by wArgLen
+/// payload bytes (text in the L2 path, packed typed args in L2+).
+struct Kv8LogRecord
+{
+    uint32_t dwMagic;       ///< KV8_LOG_MAGIC
+    uint32_t dwSiteHash;    ///< FNV-32 of (basename, line, function) -- registry key
+    uint64_t tsNs;          ///< Wall-clock nanoseconds since Unix epoch
+    uint32_t dwThreadID;    ///< OS thread ID at moment of call
+    uint16_t wCpuID;        ///< CPU core index at moment of call
+    uint8_t  bLevel;        ///< Kv8LogLevel cast to uint8_t
+    uint8_t  bFlags;        ///< Bit 0 = KV8_LOG_FLAG_TEXT (raw text payload)
+    uint16_t wArgLen;       ///< Byte length of payload that follows this header
+    uint16_t wReserved;     ///< Reserved; must be zero
+    // Followed by wArgLen bytes of payload.
+};
+static_assert(sizeof(Kv8LogRecord) == 28, "Kv8LogRecord must be 28 bytes");
+
+#pragma pack(pop)
+
+/// FNV-32 over a single contiguous byte run.  Returns the canonical FNV-1a
+/// value (initial offset 2166136261, prime 16777619).  The result is never
+/// remapped here; callers that use 0 as a sentinel must remap themselves.
+inline uint32_t Kv8FNV32(const void* pData, size_t cbData)
+{
+    uint32_t h = 2166136261u;
+    const uint8_t* p = static_cast<const uint8_t*>(pData);
+    for (size_t i = 0; i < cbData; ++i) { h ^= p[i]; h *= 16777619u; }
+    return h;
+}
+
+/// Compute the call-site hash from (basename, line, function).
+///
+/// The hash is FNV-32 over the concatenation
+///     basename + '\0' + decimal(line) + '\0' + function
+/// which is unique per call site -- (file, line) alone fix one source
+/// location, function is appended for human readability and to disambiguate
+/// the theoretical case of two files sharing a basename.
+///
+/// The result is never zero: zero is reserved as the "not yet registered"
+/// sentinel used by the producer-side static cache.  A canonical-FNV result
+/// of zero is remapped to 1.
+inline uint32_t Kv8LogSiteHash(const char* pFile, uint16_t wFileLen,
+                               uint32_t    dwLine,
+                               const char* pFunc, uint16_t wFuncLen)
+{
+    uint32_t h = 2166136261u;
+    if (pFile)
+        for (uint16_t i = 0; i < wFileLen; ++i) { h ^= (uint8_t)pFile[i]; h *= 16777619u; }
+    h ^= 0u;             h *= 16777619u;  // explicit '\0' separator
+    char szLine[16];
+    int  cbLine = snprintf(szLine, sizeof(szLine), "%u", static_cast<unsigned>(dwLine));
+    if (cbLine < 0) cbLine = 0;
+    for (int i = 0; i < cbLine; ++i)         { h ^= (uint8_t)szLine[i]; h *= 16777619u; }
+    h ^= 0u;             h *= 16777619u;  // explicit '\0' separator
+    if (pFunc)
+        for (uint16_t i = 0; i < wFuncLen; ++i) { h ^= (uint8_t)pFunc[i]; h *= 16777619u; }
+    return h ? h : 1u;
+}
+
+/// Encode a log-site descriptor tail (the variable-length bytes that follow
+/// a KafkaRegistryRecord with wCounterID == KV8_CID_LOG_SITE).
+///
+/// Output layout matches the Trace log wire format documentation above.
+/// Returns the number of bytes written to outBuf, or 0 if buffers are
+/// invalid or cbOut is too small.
+inline size_t Kv8EncodeLogSiteTail(const char* pFile, uint16_t wFileLen,
+                                   uint32_t    dwLine,
+                                   const char* pFunc, uint16_t wFuncLen,
+                                   const char* pFmt,  uint16_t wFmtLen,
+                                   void* pOut, size_t cbOut)
+{
+    const size_t cbNeed = static_cast<size_t>(2u + wFileLen)
+                        + static_cast<size_t>(4u)
+                        + static_cast<size_t>(2u + wFuncLen)
+                        + static_cast<size_t>(2u + wFmtLen);
+    if (!pOut || cbOut < cbNeed) return 0;
+    uint8_t* p = static_cast<uint8_t*>(pOut);
+    memcpy(p, &wFileLen, 2); p += 2;
+    if (wFileLen) memcpy(p, pFile, wFileLen); p += wFileLen;
+    memcpy(p, &dwLine, 4);   p += 4;
+    memcpy(p, &wFuncLen, 2); p += 2;
+    if (wFuncLen) memcpy(p, pFunc, wFuncLen); p += wFuncLen;
+    memcpy(p, &wFmtLen, 2);  p += 2;
+    if (wFmtLen)  memcpy(p, pFmt,  wFmtLen);  p += wFmtLen;
+    return cbNeed;
+}
+
+/// Decoded view of a log-site descriptor tail.  String views point into the
+/// caller's input buffer; lifetime is bounded by that buffer.
+struct Kv8LogSiteInfo
+{
+    std::string_view sFile;
+    std::string_view sFunc;
+    std::string_view sFmt;
+    uint32_t         dwLine = 0;
+};
+
+/// Decode a log-site descriptor tail produced by Kv8EncodeLogSiteTail.
+/// Returns true on success; false if the tail is truncated or malformed.
+inline bool Kv8DecodeLogSiteTail(const void* pData, size_t cbData,
+                                 Kv8LogSiteInfo& out)
+{
+    if (!pData) return false;
+    const uint8_t* p   = static_cast<const uint8_t*>(pData);
+    const uint8_t* end = p + cbData;
+
+    uint16_t wFileLen = 0;
+    if (p + 2 > end) return false;
+    memcpy(&wFileLen, p, 2); p += 2;
+    if (p + wFileLen > end) return false;
+    out.sFile = std::string_view(reinterpret_cast<const char*>(p), wFileLen);
+    p += wFileLen;
+
+    if (p + 4 > end) return false;
+    memcpy(&out.dwLine, p, 4); p += 4;
+
+    uint16_t wFuncLen = 0;
+    if (p + 2 > end) return false;
+    memcpy(&wFuncLen, p, 2); p += 2;
+    if (p + wFuncLen > end) return false;
+    out.sFunc = std::string_view(reinterpret_cast<const char*>(p), wFuncLen);
+    p += wFuncLen;
+
+    uint16_t wFmtLen = 0;
+    if (p + 2 > end) return false;
+    memcpy(&wFmtLen, p, 2); p += 2;
+    if (p + wFmtLen > end) return false;
+    out.sFmt = std::string_view(reinterpret_cast<const char*>(p), wFmtLen);
+    p += wFmtLen;
+
+    return true;
+}
+
+/// Decode one Kv8LogRecord from raw Kafka payload bytes.
+///
+/// Returns false when the record is malformed (wrong magic, truncated,
+/// invalid level, or wReserved != 0).  Trailing bytes after the declared
+/// payload are NOT an error -- the function ignores them and returns true,
+/// preserving forward-compatibility for future header extensions.
+///
+/// On success outPayload is populated as a raw view into pData (lifetime
+/// bounded by the caller's buffer).
+inline bool Kv8DecodeLogRecord(const void*       pData,
+                               size_t            cbData,
+                               Kv8LogRecord&     outHeader,
+                               std::string_view& outPayload)
+{
+    if (!pData || cbData < sizeof(Kv8LogRecord)) return false;
+    memcpy(&outHeader, pData, sizeof(Kv8LogRecord));
+    if (outHeader.dwMagic   != KV8_LOG_MAGIC)            return false;
+    if (outHeader.bLevel    >= KV8_LOG_LEVEL_COUNT)      return false;
+    if (outHeader.wReserved != 0u)                       return false;
+    if (outHeader.wArgLen   >  KV8_LOG_MAX_PAYLOAD)      return false;
+    if (cbData < sizeof(Kv8LogRecord) + outHeader.wArgLen) return false;
+    const char* p = static_cast<const char*>(pData) + sizeof(Kv8LogRecord);
+    outPayload = std::string_view(p, outHeader.wArgLen);
+    return true;
+}
+
+////////////////////////////////////////////////////////////////////////////////
 // Session and counter data models
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -348,7 +583,22 @@ struct SessionMeta
     /// Direct lookup from a per-counter topic name to the counter it carries.
     /// Populated only for the new per-counter topic layout (one counter per topic).
     /// Empty when a session was recorded with the legacy shared-topic layout.
-    std::map<std::string, CounterMeta> topicToCounter;};
+    std::map<std::string, CounterMeta> topicToCounter;
+
+    /// Owned snapshot of one trace-log call site (KV8_CID_LOG_SITE record).
+    /// Strings are owned to keep the SessionMeta self-contained.
+    struct LogSiteRecord
+    {
+        std::string sFile;
+        std::string sFunc;
+        std::string sFmt;
+        uint32_t    dwLine = 0;
+    };
+    /// Trace-log call sites known at session-discovery time, keyed by FNV-32
+    /// site hash.  Live registrations during a session are merged into this
+    /// map by the consumer thread.
+    std::map<uint32_t, LogSiteRecord> logSites;
+};
 
 ////////////////////////////////////////////////////////////////////////////////
 // Utility helpers

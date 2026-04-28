@@ -37,6 +37,8 @@
 #else
 #  include <time.h>
 #  include <unistd.h>
+#  include <sched.h>
+#  include <sys/syscall.h>
 #  define KV8LOG_API extern "C" __attribute__((visibility("default")))
 #endif
 
@@ -51,6 +53,7 @@
 #include <atomic>
 #include <memory>
 #include <thread>
+#include <unordered_set>
 
 // kv8 producer + consumer + types from the static libkv8.
 #include <kv8/IKv8Producer.h>
@@ -183,6 +186,41 @@ static void GetFiletime(uint32_t& hi, uint32_t& lo)
 #endif
 }
 
+// ── Thread ID and CPU index (call-site capture for trace log) ──────────────
+static inline uint32_t LogThreadId()
+{
+#ifdef _WIN32
+    return static_cast<uint32_t>(GetCurrentThreadId());
+#elif defined(__GLIBC__) && (__GLIBC__ > 2 || (__GLIBC__ == 2 && __GLIBC_MINOR__ >= 30))
+    return static_cast<uint32_t>(gettid());
+#else
+    return static_cast<uint32_t>(syscall(SYS_gettid));
+#endif
+}
+
+static inline uint16_t LogCpuId()
+{
+#ifdef _WIN32
+    return static_cast<uint16_t>(GetCurrentProcessorNumber());
+#else
+    int c = sched_getcpu();
+    return (c < 0) ? 0u : static_cast<uint16_t>(c);
+#endif
+}
+
+// ── Basename of a __FILE__ literal (slow path: registration only) ──────────
+static inline void TrimToBasename(const char*& p, uint16_t& len)
+{
+    if (!p || len == 0) return;
+    const char* start = p;
+    const char* end   = p + len;
+    const char* last  = start;
+    for (const char* q = start; q < end; ++q)
+        if (*q == '/' || *q == '\\') last = q + 1;
+    p   = last;
+    len = static_cast<uint16_t>(end - last);
+}
+
 // CR-03: Read both clocks back-to-back with no voluntary yield between them
 // to minimise the skew between the two anchor values.  Using a single helper
 // removes the risk of unrelated code being inserted between the two reads.
@@ -296,6 +334,17 @@ struct Kv8LogSession
     kv8::Kv8Config     ctl_cfg;    // broker config stored for CtrlConsumerThread
     std::thread        ctl_thread;
     std::atomic<bool>  ctl_stop{false};
+
+    // Trace log (Phase L2):
+    //   log_rkt        -- pre-created topic handle for the hot-path producer.
+    //   log_sites_mu   -- guards log_sites_seen.
+    //   log_sites_seen -- set of site hashes already registered in this process
+    //                     run, used to skip redundant ._registry writes when
+    //                     several macro expansions share a site (e.g. across
+    //                     DLL reloads).  Hot path never touches this set.
+    void*                       log_rkt = nullptr;
+    std::mutex                  log_sites_mu;
+    std::unordered_set<uint32_t> log_sites_seen;
 
     // Write the initial session registration records to Kafka.
     void WriteSessionHeader()
@@ -472,6 +521,10 @@ void* kv8log_open(const char* brokers, const char* channel,
 
     s->WriteSessionHeader();
 
+    // Pre-create the log topic handle for the trace-log hot path.  The topic
+    // is created on first produce; this call simply caches the handle.
+    s->log_rkt = s->producer->CreateTopic(s->log_topic);
+
     // Start the control consumer thread after the session header is written
     // so the producer is fully set up before the consumer thread starts.
     s->ctl_stop.store(false, std::memory_order_relaxed);
@@ -500,6 +553,10 @@ void kv8log_close(void* h)
             s->producer->DestroyTopic(slot.rkt);
             slot.rkt = nullptr;
         }
+    }
+    if (s->log_rkt) {
+        s->producer->DestroyTopic(s->log_rkt);
+        s->log_rkt = nullptr;
     }
     s->producer->Flush(10000);
     delete s;
@@ -831,4 +888,114 @@ void kv8log_add_udt_ts(void* h, uint16_t feed_id,
     uint16_t keyBE = static_cast<uint16_t>(
         ((feed_id & 0xFFu) << 8) | ((feed_id >> 8) & 0xFFu));
     s->producer->ProduceToTopic(slot.rkt, buf, msg_size, &keyBE, sizeof(keyBE));
+}
+
+// ── kv8log_register_log_site (Phase L2) ────────────────────────────────────
+//
+// Slow path -- called at most once per call site per process run.  Computes
+// the FNV-32 site hash from (basename, line, function), de-duplicates against
+// the per-session log_sites_seen set, and writes a KV8_CID_LOG_SITE record to
+// <ch>._registry on first encounter.  Returns the site hash so the user-side
+// macro can cache it in a static atomic.
+//
+// The Kafka message key is sprintf("%08X", dwHash) so log compaction keeps
+// exactly one record per call site even if the developer re-edits the format
+// string on the same source line across runs.
+KV8LOG_API
+uint32_t kv8log_register_log_site(void* h,
+                                   const char* file, uint16_t file_len,
+                                   const char* func, uint16_t func_len,
+                                   uint32_t    line,
+                                   const char* fmt,  uint16_t fmt_len)
+{
+    if (!h || !file || !func || !fmt) return 0;
+    auto* s = static_cast<Kv8LogSession*>(h);
+
+    // Trim __FILE__ literal to its basename (strip any directory prefix the
+    // build system embedded).
+    TrimToBasename(file, file_len);
+
+    const uint32_t dwHash = Kv8LogSiteHash(file, file_len, line, func, func_len);
+
+    // De-duplicate: if we already wrote a registry record for this site in
+    // this process run, skip the Kafka I/O and return the cached hash.
+    {
+        std::lock_guard<std::mutex> lk(s->log_sites_mu);
+        if (!s->log_sites_seen.insert(dwHash).second)
+            return dwHash;
+    }
+
+    uint8_t tail[2048];
+    const size_t cbTail = Kv8EncodeLogSiteTail(file, file_len,
+                                                line,
+                                                func, func_len,
+                                                fmt,  fmt_len,
+                                                tail, sizeof(tail));
+    if (cbTail == 0) {
+        fprintf(stderr, "[kv8log_rt] log site tail too large (file_len=%u func_len=%u fmt_len=%u)\n",
+                static_cast<unsigned>(file_len),
+                static_cast<unsigned>(func_len),
+                static_cast<unsigned>(fmt_len));
+        return dwHash;
+    }
+
+    KafkaRegistryRecord rec{};
+    rec.dwHash     = dwHash;
+    rec.wCounterID = KV8_CID_LOG_SITE;
+    rec.wFlags     = 0;
+    rec.wNameLen   = static_cast<uint16_t>(cbTail);
+    rec.wTopicLen  = 0;
+    rec.wVersion   = KV8_REGISTRY_VERSION;
+
+    std::vector<uint8_t> buf(sizeof(rec) + cbTail);
+    memcpy(buf.data(),               &rec, sizeof(rec));
+    memcpy(buf.data() + sizeof(rec), tail, cbTail);
+
+    // Compaction key: 8-char hex of dwHash.  One record per call site survives.
+    char szKey[16];
+    snprintf(szKey, sizeof(szKey), "%08X", dwHash);
+    s->producer->Produce(s->reg_topic, buf.data(), buf.size(),
+                          szKey, 8u);
+
+    return dwHash;
+}
+
+// ── kv8log_log (Phase L2) ──────────────────────────────────────────────────
+//
+// Hot path -- one stack-allocated buffer holds the 28-byte Kv8LogRecord
+// header plus the payload (text or packed args).  No heap allocation, no
+// mutex.  ProduceToTopic uses the pre-created log_rkt handle for zero
+// per-message topic-name lookup.
+KV8LOG_API
+void kv8log_log(void* h,
+                uint32_t  site_hash,
+                uint8_t   level,
+                const void* payload, uint16_t payload_len,
+                uint8_t   flags)
+{
+    if (!h || !site_hash) return;
+    auto* s = static_cast<Kv8LogSession*>(h);
+    if (!s->log_rkt) return;
+    if (level >= KV8_LOG_LEVEL_COUNT) return;
+    if (payload_len > KV8_LOG_MAX_PAYLOAD) payload_len = KV8_LOG_MAX_PAYLOAD;
+
+    uint8_t buf[sizeof(Kv8LogRecord) + KV8_LOG_MAX_PAYLOAD];
+
+    Kv8LogRecord hdr{};
+    hdr.dwMagic    = KV8_LOG_MAGIC;
+    hdr.dwSiteHash = site_hash;
+    hdr.tsNs       = WallNs();
+    hdr.dwThreadID = LogThreadId();
+    hdr.wCpuID     = LogCpuId();
+    hdr.bLevel     = level;
+    hdr.bFlags     = flags;
+    hdr.wArgLen    = payload_len;
+    hdr.wReserved  = 0;
+
+    memcpy(buf, &hdr, sizeof(hdr));
+    if (payload_len && payload)
+        memcpy(buf + sizeof(hdr), payload, payload_len);
+
+    const size_t cbMsg = sizeof(hdr) + payload_len;
+    s->producer->ProduceToTopic(s->log_rkt, buf, cbMsg, nullptr, 0);
 }

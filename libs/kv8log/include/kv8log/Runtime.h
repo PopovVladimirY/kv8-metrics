@@ -43,6 +43,27 @@ struct Vtable
     void     (*add_udt_ts)(kv8log_h h, uint16_t feed_id,
                            const void* packed_data, uint16_t data_size,
                            uint64_t ts_ns);
+
+    // Trace log entries (Phase L2; nullptr when the runtime library does not
+    // export the symbols).  See KV8_Log.h for the user-facing macros.
+    //
+    // register_log_site: slow-path call invoked at most once per call site per
+    //   process run.  Writes a KV8_CID_LOG_SITE record to <ch>._registry and
+    //   returns the FNV-32 site hash.  Returns 0 if registration could not
+    //   complete (caller stores the result regardless to suppress retries).
+    //
+    // log: hot-path call invoked on every emission.  Captures thread ID, CPU,
+    //   and timestamp internally and writes a Kv8LogRecord to <ch>.<sid>._log.
+    uint32_t (*register_log_site)(kv8log_h h,
+                                  const char* file, uint16_t file_len,
+                                  const char* func, uint16_t func_len,
+                                  uint32_t    line,
+                                  const char* fmt,  uint16_t fmt_len);
+    void     (*log)(kv8log_h h,
+                    uint32_t  site_hash,
+                    uint8_t   level,
+                    const void* payload, uint16_t payload_len,
+                    uint8_t   flags);
 };
 
 // ── Runtime ───────────────────────────────────────────────────────────────────
@@ -67,6 +88,25 @@ public:
     // Unix epoch, using the per-session wallclock/HPC anchor.
     // Returns 0 if the runtime library is absent.
     static uint64_t MonotonicToNs(uint64_t mono_ns);
+
+    // ── Trace log (Phase L2) ───────────────────────────────────────────────
+    // Slow-path: register one call site against the default channel.  Returns
+    // the FNV-32 site hash on success, or 1 if the runtime library is absent
+    // (1 is a benign sentinel: callers cache it in a static so they never
+    // retry registration, and Log() with site_hash=1 silently no-ops when the
+    // runtime is missing).  Never returns 0 -- 0 is reserved as the
+    // "not yet registered" cache sentinel inside the user macro expansion.
+    static uint32_t RegisterLogSite(const char* file, uint16_t file_len,
+                                    const char* func, uint16_t func_len,
+                                    uint32_t    line,
+                                    const char* fmt,  uint16_t fmt_len);
+
+    // Hot-path: emit one trace log record on the default channel.
+    // No-op when the runtime library is absent.
+    static void Log(uint32_t  site_hash,
+                    uint8_t   level,
+                    const void* payload, uint16_t payload_len,
+                    uint8_t   flags);
 };
 
 } // namespace kv8log
