@@ -39,10 +39,24 @@ The instrumentation API lives entirely behind a single header (`KV8_Log.h`).
 All macros compile out to nothing unless `KV8_LOG_ENABLE` is defined -- zero
 cost in production builds that omit the flag.
 
+kv8log exposes **three pillars** of telemetry, all sharing the same Kafka
+session and the same `_registry` discovery topic:
+
+1. **Scalar counters** -- continuous numeric streams (altitude, RPM, queue
+   depth) via `KV8_TEL_ADD*`.
+2. **UDT feeds** -- structured user-defined-type records for compound
+   payloads via `KV8_UDT_*`.
+3. **Trace logs** -- discrete severity-tagged events via `KV8_LOG_INFO`,
+   `KV8_LOGF_WARN`, etc. Records reach the kv8scope Log Panel and `kv8cli`
+   `[LOG]` output.
+
 ```cpp
 KV8_CHANNEL(nav, "Aerial/Navigation");           // named producer channel
 KV8_TEL(alt_m, "altitude", 0.0, 10000.0);        // declare counter (once per TU)
 KV8_TEL_ADD_CH(nav, alt_m, current_altitude);    // record sample -- hot path
+
+KV8_LOG_INFO("navigation initialised");          // discrete trace event
+KV8_LOGF_WARN("GPS dropout %.1fs", dropout_s);   // printf-style trace event
 ```
 
 The shared runtime (`kv8log.so` / `kv8log.dll`) is loaded lazily on first use,
@@ -55,6 +69,7 @@ so the user application has no link-time dependency on it.
 | `Channel` | One Kafka producer session; lazy-init, thread-safe |
 | `Counter` | Named metric with min/max range, bound to a Channel |
 | `UdtFeed` | Structured (user-defined type) feed for compound records |
+| `Kv8LogRecord` | 28-byte fixed header + payload for one trace-log emission (in `<kv8/Kv8Types.h>`) |
 | `Runtime`  | Opaque handle to the loaded shared library |
 
 ---
@@ -69,6 +84,8 @@ Architecture highlights:
 - `SpscRingBuffer<TelemetrySample>` (lock-free, cache-line-aligned head/tail)
   bridges the consumer thread to the render thread without mutexes.
 - `WaveformRenderer` draws scrolling waveforms via ImGui draw lists.
+- `LogStore` + `LogPanel` host a dockable trace-log viewer (Ctrl+L). Rows
+  are tinted by severity; clicking a row seeks the waveform timeline.
 - `SessionManager` tracks open sessions; `SessionListPanel` lists available ones.
 - `StatsEngine` / `StatsPanel` compute and display per-counter statistics.
 - `TimeConverter` maps hardware timer ticks to wall-clock UTC using the

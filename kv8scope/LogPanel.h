@@ -53,4 +53,17 @@ private:
     // Toolbar state.
     char m_szFilter[128] = {};   // Mirrored into LogStore::SetTextFilter()
     bool m_bFollow      = true;  // Auto-scroll table to bottom on new entries
+    bool m_bSync        = false; // Two-way scope <-> log selection sync
+
+    // Selection state -- the timestamp (Unix-epoch ns) of the highlighted
+    // entry, set either by clicking a row or by clicking the matching
+    // marker on the waveform.  Zero means "no selection".  When non-zero
+    // and m_bScrollToSelection is true, the next Render scrolls the table
+    // so the selected row is visible (consumed once per selection change).
+    uint64_t m_qwSelectedTsNs       = 0;
+    bool     m_bScrollToSelection   = false;
+
+    // Last waveform window observed; used in Sync mode to scroll the table
+    // to the newest in-window entry whenever the X range changes.
+    uint64_t m_qwLastWindowMaxNs    = 0;
 };

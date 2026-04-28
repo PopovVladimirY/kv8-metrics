@@ -5,6 +5,7 @@
 
 #include "LogStore.h"
 #include "WaveformRenderer.h"
+#include "FontManager.h"
 
 #include <kv8/Kv8Types.h>
 
@@ -84,6 +85,25 @@ void LogPanel::Render(WaveformRenderer* pWaveform)
     if (!m_bVisible)  return;
     if (!m_pStore)    return;
 
+    // ── Cross-panel sync: marker click on the waveform ────────────────────
+    // Promotes that entry to the panel's selection so the row is
+    // highlighted and scrolled into view on this frame.
+    if (pWaveform)
+    {
+        uint64_t qwClickedNs = 0;
+        if (pWaveform->ConsumeLogMarkerClick(qwClickedNs) && qwClickedNs)
+        {
+            m_qwSelectedTsNs     = qwClickedNs;
+            m_bScrollToSelection = true;
+            // Manual selection wins over Follow auto-scroll.
+            m_bFollow            = false;
+        }
+        // Push current selection so the waveform draws a dashed cursor
+        // at this timestamp on every plot.  Pushed unconditionally each
+        // frame so deselection (m_qwSelectedTsNs == 0) clears the line.
+        pWaveform->SetSelectedLogTsNs(m_qwSelectedTsNs);
+    }
+
     // Reasonable default size/position so the window is visible the very
     // first time it pops up.  Persisted across sessions via imgui.ini.
     // The "##" title disambiguator is the panel's instance address so
@@ -136,6 +156,15 @@ void LogPanel::Render(WaveformRenderer* pWaveform)
     ImGui::SameLine();
     ImGui::Checkbox("Follow", &m_bFollow);
     ImGui::SameLine();
+    if (ImGui::Checkbox("Sync", &m_bSync))
+    {
+        // Toggling Sync ON forces a re-scroll on this frame.
+        m_qwLastWindowMaxNs = 0;
+    }
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Keep the log row selection synchronised\n"
+                          "with the waveform's visible window.");
+    ImGui::SameLine();
     ImGui::Text("| Visible: %zu / %zu",
                 m_pStore->CountVisible(),
                 m_pStore->GetAll().size());
@@ -150,6 +179,32 @@ void LogPanel::Render(WaveformRenderer* pWaveform)
         (dXMin > 0.0) ? static_cast<uint64_t>(dXMin * 1.0e9) : 0ULL;
     const uint64_t tsMaxNs =
         (dXMax > 0.0) ? static_cast<uint64_t>(dXMax * 1.0e9) : ~0ULL;
+
+    // ── Sync mode: when the waveform window moves, snap the table's
+    // selection to the newest entry inside the new window.  This keeps
+    // both views aligned without requiring an explicit click.
+    if (m_bSync && pWaveform && tsMaxNs != m_qwLastWindowMaxNs)
+    {
+        m_qwLastWindowMaxNs = tsMaxNs;
+        const auto& entries = m_pStore->GetAll();
+        // Pick the latest entry that falls inside [tsMinNs, tsMaxNs].
+        // Entries are time-ordered, so a reverse linear scan is bounded
+        // by the number of post-window records and is cheap in practice.
+        for (auto it = entries.rbegin(); it != entries.rend(); ++it)
+        {
+            if (it->tsNs >= tsMinNs && it->tsNs <= tsMaxNs)
+            {
+                if (it->tsNs != m_qwSelectedTsNs)
+                {
+                    m_qwSelectedTsNs     = it->tsNs;
+                    m_bScrollToSelection = true;
+                    // Sync owns the scroll position -- Follow would fight it.
+                    m_bFollow            = false;
+                }
+                break;
+            }
+        }
+    }
 
     // ── Table ──────────────────────────────────────────────────────────────
     constexpr ImGuiTableFlags kTableFlags =
@@ -174,6 +229,8 @@ void LogPanel::Render(WaveformRenderer* pWaveform)
 
         // Background colour for entries inside the visible waveform window.
         const ImU32 uInWindowBg = ImGui::GetColorU32(ImVec4(0.10f, 0.20f, 0.30f, 0.55f));
+        // Background colour for the selected row (cross-panel pin).
+        const ImU32 uSelectedBg = ImGui::GetColorU32(ImVec4(0.25f, 0.50f, 0.85f, 0.60f));
 
         for (size_t i = 0; i < entries.size(); ++i)
         {
@@ -201,16 +258,43 @@ void LogPanel::Render(WaveformRenderer* pWaveform)
                 ImGui::TableSetBgColor(ImGuiTableBgTarget_RowBg1, uInWindowBg);
             }
 
+            // Cross-panel selection -- overrides the in-window tint.
+            const bool bSelected = (m_qwSelectedTsNs != 0 &&
+                                    e.tsNs == m_qwSelectedTsNs);
+            if (bSelected)
+            {
+                ImGui::TableSetBgColor(ImGuiTableBgTarget_RowBg1, uSelectedBg);
+                if (m_bScrollToSelection)
+                {
+                    ImGui::SetScrollHereY(0.5f);
+                    m_bScrollToSelection = false;
+                }
+            }
+
+            // Bold the selected row so it stays distinguishable from the
+            // background tint alone -- helps when scanning a busy table.
+            FontManager* pFM = FontManager::Get();
+            if (bSelected && pFM)
+                pFM->PushBold();
+
             char szTs[40];
             FormatWallNs(e.tsNs, szTs, sizeof(szTs));
 
             ImGui::TableNextColumn();
             // Selectable spans the row; on click, seek the waveform to this entry.
-            if (ImGui::Selectable(szTs, false,
+            if (ImGui::Selectable(szTs, bSelected,
                                   ImGuiSelectableFlags_SpanAllColumns))
             {
+                m_qwSelectedTsNs = e.tsNs;
                 if (pWaveform)
-                    pWaveform->NavigateTo(static_cast<double>(e.tsNs) * 1.0e-9);
+                {
+                    // tsNs is absolute Unix epoch; NavigateTo expects
+                    // session-relative seconds.  Subtract the session origin
+                    // or the seek lands ~1.7e9 s past every sample and the
+                    // graphs render empty.
+                    const double dAbs = static_cast<double>(e.tsNs) * 1.0e-9;
+                    pWaveform->NavigateTo(dAbs - pWaveform->GetSessionOrigin());
+                }
             }
 
             ImGui::TableNextColumn();
@@ -243,10 +327,13 @@ void LogPanel::Render(WaveformRenderer* pWaveform)
                 ImGui::EndTooltip();
             }
 
+            if (bSelected && pFM)
+                FontManager::PopFont();
+
             ImGui::PopID();
         }
 
-        if (m_bFollow)
+        if (m_bFollow && !m_bScrollToSelection)
             ImGui::SetScrollHereY(1.0f);
 
         ImGui::EndTable();

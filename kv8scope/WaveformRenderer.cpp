@@ -628,8 +628,9 @@ WaveformRenderer::CounterStats WaveformRenderer::QueryStats(
 
 void WaveformRenderer::NavigateTo(double dTimestamp)
 {
-    m_bNavPending = true;
-    m_dNavTarget  = dTimestamp;
+    m_bNavPending   = true;
+    m_dNavTarget    = dTimestamp;
+    m_bNavRequested = true;
 }
 
 // ---------------------------------------------------------------------------
@@ -1137,6 +1138,20 @@ void WaveformRenderer::RenderLogMarkersInPlot()
         pDL->AddTriangleFilled(a, b, c, col);
         pDL->AddTriangle(a, b, c, colEdge, 1.0f);
 
+        // Halo for the currently selected log entry: a slightly larger
+        // outline triangle around the marker so it pops in the busy
+        // bottom strip.  The dashed cursor below also marks the column,
+        // but the halo unambiguously identifies which marker is selected
+        // when several events fall on adjacent pixel columns.
+        if (m_qwSelectedLogTsNs != 0 && e.tsNs == m_qwSelectedLogTsNs)
+        {
+            const float  fHaloPad  = 3.0f;
+            const ImVec2 ha(fX,                       fBaseY - kTallH - fHaloPad);
+            const ImVec2 hb(fX - kHalfW - fHaloPad,   fBaseY + fHaloPad);
+            const ImVec2 hc(fX + kHalfW + fHaloPad,   fBaseY + fHaloPad);
+            pDL->AddTriangle(ha, hb, hc, IM_COL32(255, 255, 255, 230), 2.0f);
+        }
+
         if (bHover)
         {
             const float fDx = vMouse.x - fX;
@@ -1177,7 +1192,54 @@ void WaveformRenderer::RenderLogMarkersInPlot()
         ImGui::EndTooltip();
 
         if (bClick)
-            NavigateTo(static_cast<double>(e.tsNs) * 1.0e-9);
+        {
+            m_qwLogMarkerClickTsNs = e.tsNs;
+            m_bLogMarkerClicked    = true;
+            NavigateTo(static_cast<double>(e.tsNs) * 1.0e-9 - m_dSessionOrigin);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// RenderSelectedLogCursorInPlot -- draws a dashed vertical line at the
+// timestamp of the LogPanel's currently selected entry so the visual
+// link between the table row and the telemetry plot is unambiguous.
+//
+// Drawn independently from RenderLogMarkersInPlot so the cursor remains
+// visible even when triangle markers are toggled off, or when the
+// selected entry is DEBUG/INFO (which never gets a triangle).
+//
+// Must be called inside a BeginPlot / EndPlot block.
+// ---------------------------------------------------------------------------
+void WaveformRenderer::RenderSelectedLogCursorInPlot()
+{
+    if (m_qwSelectedLogTsNs == 0)
+        return;
+
+    const double dRel = (static_cast<double>(m_qwSelectedLogTsNs) * 1.0e-9)
+                      - m_dSessionOrigin;
+    if (dRel < m_dXLimitMin || dRel > m_dXLimitMax)
+        return;
+
+    ImDrawList*  pDL    = ImPlot::GetPlotDrawList();
+    const ImVec2 pMin   = ImPlot::GetPlotPos();
+    const ImVec2 pSize  = ImPlot::GetPlotSize();
+    const ImVec2 pMax(pMin.x + pSize.x, pMin.y + pSize.y);
+
+    const float fX = ImPlot::PlotToPixels(dRel, 0.0).x;
+    if (fX < pMin.x || fX > pMax.x)
+        return;
+
+    // Soft cyan dashed line -- distinct from annotation colours and from
+    // any severity hue so the cursor never blurs into other markup.
+    const ImU32 col = IM_COL32(120, 220, 255, 220);
+
+    static constexpr float kDash = 4.0f;
+    static constexpr float kGap  = 4.0f;
+    for (float fy = pMin.y; fy < pMax.y; fy += kDash + kGap)
+    {
+        const float fyEnd = (fy + kDash < pMax.y) ? (fy + kDash) : pMax.y;
+        pDL->AddLine(ImVec2(fX, fy), ImVec2(fX, fyEnd), col, 1.5f);
     }
 }
 
@@ -1963,6 +2025,12 @@ bool WaveformRenderer::Render(const ImVec2& size, bool bAutoScroll,
             // ---- 8h2. Trace-log event markers (Phase L4). --------------
             if (m_pLogStore && m_bLogMarkersVisible)
                 RenderLogMarkersInPlot();
+
+            // ---- 8h3. Selected log entry cursor (dashed vertical). -----
+            // Drawn independently so the visual link to LogPanel survives
+            // toggling markers off and works for DEBUG/INFO entries too.
+            if (m_pLogStore)
+                RenderSelectedLogCursorInPlot();
 
             // ---- 8i. Ctrl+click: request new annotation. ---------------
             if (ImPlot::IsPlotHovered() && io.KeyCtrl &&

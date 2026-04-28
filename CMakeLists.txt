@@ -72,6 +72,7 @@ add_subdirectory(tools/kv8probe)
 add_subdirectory(tools/kv8verify)
 # -- Examples -----------------------------------------------------------------
 add_subdirectory(examples/kv8bench)
+add_subdirectory(examples/kv8bench_log)
 add_subdirectory(examples/kv8cli)
 add_subdirectory(examples/kv8feeder)
 # -- UI application -----------------------------------------------------------

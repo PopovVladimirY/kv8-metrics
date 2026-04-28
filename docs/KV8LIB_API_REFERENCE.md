@@ -230,7 +230,97 @@ The fixed header is followed by `[wNameLen bytes UTF-8][wTopicLen bytes UTF-8]`.
 | `KV8_CID_GROUP` | `0xFFFF` | Group-level record (channel/telemetry info) |
 | `KV8_CID_LOG` | `0xFFFE` | Session log-topic announcement |
 | `KV8_CID_DELETED` | `0xFFFD` | Tombstone (session was deleted) |
+| `KV8_CID_LOG_SITE` | `0xFFFB` | Trace-log call-site descriptor (see Trace log wire format below) |
 | Other | 0..N | Individual counter definition |
+
+---
+
+### Trace log wire format
+
+Trace log records are written to the per-session topic `<channel>.<sessionID>._log`.
+They are emitted by the `kv8log` library (see Section 5) but every byte that
+reaches Kafka is described by types in `<kv8/Kv8Types.h>` so that any consumer
+(kv8cli, kv8scope, custom tools) can decode them with libkv8 alone.
+
+#### Two-record design
+
+For every call site (a particular `KV8_LOG*` macro expansion in source code)
+the producer writes:
+
+1. **One site descriptor** to the channel `._registry` topic, exactly once per
+   process run. This is a `KafkaRegistryRecord` with `wCounterID =
+   KV8_CID_LOG_SITE`. The variable-length tail carries:
+
+   ```text
+   uint16_t wFileLen ; char file[wFileLen]    // basename only
+   uint32_t dwLine
+   uint16_t wFuncLen ; char func[wFuncLen]
+   uint16_t wFmtLen  ; char fmt [wFmtLen]     // raw format string
+   ```
+
+   The Kafka message key is the 8-hex-digit hash, so log compaction keeps the
+   newest descriptor for each call site.
+
+2. **One data record** to the session `._log` topic on every emission, using
+   the fixed-size header below followed by `wArgLen` payload bytes.
+
+This split eliminates per-record source-location overhead: a 100-byte format
+string is transmitted once, not once per million emissions.
+
+#### Constants
+
+```cpp
+static const uint32_t KV8_LOG_MAGIC        = 0x4B563854u;  // "KV8T"
+static const uint16_t KV8_LOG_MAX_PAYLOAD  = 4095u;
+static const uint8_t  KV8_LOG_LEVEL_COUNT  = 5u;
+static const uint8_t  KV8_LOG_FLAG_TEXT    = 0x01u;        // payload is UTF-8 text
+static const uint16_t KV8_CID_LOG_SITE     = 0xFFFBu;
+
+enum class Kv8LogLevel : uint8_t {
+    Debug = 0, Info = 1, Warning = 2, Error = 3, Fatal = 4,
+};
+```
+
+#### Kv8LogRecord (28-byte fixed header)
+
+```cpp
+#pragma pack(push, 1)
+struct Kv8LogRecord
+{
+    uint32_t dwMagic;     // KV8_LOG_MAGIC
+    uint32_t dwSiteHash;  // FNV-32(basename, line, function); registry key
+    uint64_t tsNs;        // wall-clock nanoseconds since Unix epoch
+    uint32_t dwThreadID;  // OS thread ID at the moment of the call
+    uint16_t wCpuID;      // CPU core index at the moment of the call
+    uint8_t  bLevel;      // Kv8LogLevel
+    uint8_t  bFlags;      // bit 0 = KV8_LOG_FLAG_TEXT
+    uint16_t wArgLen;     // payload bytes that follow this header
+    uint16_t wReserved;   // must be zero
+    // followed by wArgLen bytes of payload (UTF-8 text in the L2 path)
+};
+static_assert(sizeof(Kv8LogRecord) == 28, "Kv8LogRecord must be 28 bytes");
+#pragma pack(pop)
+```
+
+#### Decoder helpers
+
+| Function | Description |
+|----------|-------------|
+| `Kv8DecodeLogRecord(pData, cbData, outHeader, outPayload)` | Parses one Kafka payload into a `Kv8LogRecord` header plus a `string_view` over the payload bytes. Returns `false` on bad magic, bad level, non-zero `wReserved`, or truncation. |
+| `Kv8DecodeLogSiteTail(pData, cbData, outInfo)` | Parses the variable-length tail of a `KafkaRegistryRecord` whose `wCounterID == KV8_CID_LOG_SITE`. `outInfo` exposes `sFile`, `sFunc`, `sFmt` views and `dwLine`. |
+| `Kv8EncodeLogSiteTail(...)` | Serialise a site descriptor tail into a caller-provided buffer. Used by the producer; consumer code rarely needs it. |
+| `Kv8LogSiteHash(file, fileLen, line, func, funcLen)` | Compute the canonical FNV-32 site hash. Result is never zero (`0` is the producer's "not yet registered" sentinel). |
+| `Kv8FNV32(pData, cbData)` | Plain FNV-1a over a contiguous byte run. |
+
+Typical consumer pattern:
+
+```cpp
+kv8::Kv8LogRecord    rec;
+std::string_view     sPayload;
+if (Kv8DecodeLogRecord(pPayload, cbPayload, rec, sPayload)) {
+    // rec.bLevel, rec.tsNs, rec.dwSiteHash, sPayload  -- all ready to use
+}
+```
 
 ---
 
@@ -781,6 +871,91 @@ int main()
 
 ---
 
+## 5. kv8log -- Trace Logging API
+
+`kv8log` is a separate, instrumentation-only library used by application
+code that wants to *produce* trace log records. Consumers (kv8scope, kv8cli,
+custom tools) decode those records using libkv8 helpers documented in
+[Trace log wire format](#trace-log-wire-format) above.
+
+### 5.1 Library shape
+
+| Library | Purpose | Linkage |
+|---------|---------|---------|
+| `kv8log_facade` (static) | The single header `<kv8log/KV8_Log.h>` plus a tiny stub. The user app links this. **No** dependency on librdkafka. | `target_link_libraries(my_app PRIVATE kv8log_facade)` |
+| `kv8log_runtime` (shared) | Implements the producer side: Kafka session, `._registry` writer, `._log` writer. Loaded **lazily** via `dlopen` / `LoadLibrary` on first emission; never a link-time dependency. | Deployed alongside the binary; no `target_link_libraries` entry. |
+
+CMake target: link `kv8log_facade`, define `KV8_LOG_ENABLE` to enable
+emission. Without that define every `KV8_LOG*` macro expands to `((void)0)`
+and the app contains zero kv8log symbols.
+
+```cmake
+target_link_libraries(my_tool PRIVATE kv8log_facade)
+target_compile_definitions(my_tool PRIVATE KV8_LOG_ENABLE=1)
+```
+
+### 5.2 User-facing macros
+
+All in `<kv8log/KV8_Log.h>`. Two flavours, five severities each.
+
+| Macro | Description |
+|-------|-------------|
+| `KV8_LOG(level, "literal")` | Emit a fixed string literal at the given `kv8::Kv8LogLevel`. `level` is the enum cast to `uint8_t`. |
+| `KV8_LOGF(level, "fmt", ...)` | `printf`-style formatting into a 4096-byte stack buffer. Truncates silently at `KV8_LOG_MAX_PAYLOAD = 4095`. |
+| `KV8_LOG_DEBUG(msg)` / `KV8_LOG_INFO(msg)` / `KV8_LOG_WARN(msg)` / `KV8_LOG_ERROR(msg)` / `KV8_LOG_FATAL(msg)` | Severity-named wrappers around `KV8_LOG`. |
+| `KV8_LOGF_DEBUG(fmt, ...)` / `KV8_LOGF_INFO(...)` / `KV8_LOGF_WARN(...)` / `KV8_LOGF_ERROR(...)` / `KV8_LOGF_FATAL(...)` | Severity-named wrappers around `KV8_LOGF`. |
+| `KV8_LOG_CONFIGURE(brokers, channel, user, pass)` | Optional explicit configuration. Call **before** the first emission. The `channel` argument is currently advisory: the runtime derives the default channel name from the executable basename (`kv8log/<exe>` sanitised to `kv8log.<exe>`). |
+| `KV8_TEL_FLUSH()` | Block until every queued log + telemetry record has been delivered. Call once before exit. |
+
+### 5.3 Hot-path mechanics
+
+Each `KV8_LOG*` macro expansion owns a TU-scoped `static
+std::atomic<uint32_t>` site cache:
+
+1. First call: `Runtime::RegisterLogSite()` writes a
+   `KafkaRegistryRecord` (with `wCounterID = KV8_CID_LOG_SITE`) carrying
+   the file basename, line, function and format string. Returns the
+   call-site hash; the macro stores it in the static atomic.
+2. Subsequent calls: relaxed atomic load of the cached hash, format the
+   payload into a 4096-byte stack buffer, dispatch via `Runtime::Log` ->
+   librdkafka `Produce` on the session `._log` topic.
+
+No heap allocation, no syscalls in the typical path. Concurrent first calls
+are safe -- registration is idempotent and every racing thread writes the
+same hash into the static.
+
+### 5.4 Minimal example
+
+```cpp
+#define KV8_LOG_ENABLE
+#include <kv8log/KV8_Log.h>
+
+int main()
+{
+    // Optional: override env / argv defaults.
+    KV8_LOG_CONFIGURE("localhost:19092", "kv8log/my_app",
+                      "kv8producer", "kv8secret");
+
+    KV8_LOG_INFO("application started");
+    for (int i = 0; i < 10; ++i)
+        KV8_LOGF_DEBUG("loop iteration %d", i);
+
+    KV8_LOG_WARN("about to exit");
+    KV8_TEL_FLUSH();
+    return 0;
+}
+```
+
+Open `kv8scope`, locate the `kv8log.my_app` channel, double-click any
+session, and press `Ctrl+L` to view the records.
+
+### 5.5 Compile-out guarantee
+
+When `KV8_LOG_ENABLE` is **not** defined every `KV8_LOG*` macro expands to
+`((void)0)`. The user TU keeps zero references to kv8log symbols and the
+binary has no instrumentation overhead.
+
+
 ### 4.6 Maintenance operations
 
 List channels, inspect sessions, delete stale data.
@@ -1051,3 +1226,4 @@ The shared library exports the following symbols:
 | `kv8log_flush` | `(void* h, int timeout_ms)` | Flush the producer. |
 | `kv8log_set_counter_enabled` | `(void* h, uint16_t id, int bEnabled)` | Enable (1) or disable (0) a counter; publishes to `._ctl`. |
 | `kv8log_monotonic_to_ns` | `(void* h, uint64_t ticks) -> uint64_t` | Convert internal ticks to nanoseconds. |
+

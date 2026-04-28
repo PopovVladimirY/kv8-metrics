@@ -472,6 +472,15 @@ bool ScopeWindow::Render()
     if (m_pLogPanel)
         m_pLogPanel->Render(m_pWaveform.get());
 
+    // Any panel (annotations, log panel, future) that called
+    // WaveformRenderer::NavigateTo() since the previous frame implicitly
+    // requests pause-live: a programmatic seek would otherwise be
+    // overwritten by the live-edge auto-scroll path on the next frame and
+    // the waveforms would either snap back to live or, worse, render at
+    // an out-of-data X position and appear empty.
+    if (m_pWaveform && m_pWaveform->ConsumeNavRequested())
+        m_bAutoScroll = false;
+
     // P8: render annotation editor popup and panel window.
     if (m_bShowAnnEditor)
         RenderAnnotationEditor();

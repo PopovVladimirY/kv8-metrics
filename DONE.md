@@ -2,23 +2,30 @@
 
 Date: 2026-04-28
 
-This document summarises what has been built, what remains open, and where
-the project stands for the next phase: adding trace LOG support to kv8log.
+This document summarises what has been built and where the project stands.
+It is updated after every major phase.
 
 ---
 
 ## 1. Executive Summary
 
-The Kv8 telemetry-over-Kafka stack is largely complete through its planned
-phases. The core library, all CLI tools, the oscilloscope application, and
-the 3D path viewer are all built and functional. UDT (structured telemetry)
-support has been implemented end-to-end. The enable/disable counter
-mechanism has been designed. The documentation set is in place.
+The Kv8 telemetry-over-Kafka stack is feature-complete for its planned
+scope. The core library, all CLI tools, the oscilloscope application, and
+the 3D path viewer are built, tested, and operational.
 
-What is NOT yet present: text trace logging. kv8log currently handles only
-numeric (scalar) telemetry and structured UDT feeds. The "LOG" pillar --
-named trace messages with severity levels stored in Kafka and rendered in
-kv8scope -- is the explicit goal of the next development phase.
+**Three telemetry pillars are now in place:**
+
+1. **Scalar telemetry** -- per-counter numeric feeds (`KV8_TEL_ADD`).
+2. **Structured telemetry (UDT)** -- per-feed compound records with a
+   user-defined schema (`KV8_UDT_ADD`).
+3. **Trace logging** -- text log records with severity levels, source
+   location, thread/CPU stamps and per-call-site registry deduplication
+   (`KV8_LOG_INFO`, `KV8_LOGF_WARN`, ...). Visualised in kv8scope as a
+   dockable LogPanel synchronised with the waveform timeline.
+
+The LOG feature was delivered in six phases (L1..L6, see
+[Kv8Planning/LOG_PHASES.md](Kv8Planning/LOG_PHASES.md)) and is fully
+validated by unit, integration and benchmark tests.
 
 ---
 
@@ -87,12 +94,29 @@ This is the instrumentation library that user applications link.
 | `UdtFeed<T>` -- lazy registration, hot-path Add() for structured types | `UdtFeed.h` | DONE |
 | UDT macro system: `KV8_UDT_DEFINE`, `KV8_UDT_DEFINE_NS`, `KV8_UDT_FEED`, `KV8_UDT_ADD` | `KV8_UDT.h` | DONE |
 | UDT P1-P6 implementation plan executed to completion | `KV8_UDT_IMPL_PLAN.md` | DONE |
+| `KV8_LOG`, `KV8_LOGF` and severity wrappers (DEBUG / INFO / WARN / ERROR / FATAL) | `KV8_Log.h` | DONE |
+| Per-call-site `std::atomic<uint32_t>` cache; first-call registration only | `KV8_Log.h`, `Runtime.cpp` | DONE |
+| Log call-site registry: `KafkaRegistryRecord` with `wCounterID = KV8_CID_LOG_SITE` | `Kv8Types.h`, `kv8log_impl.cpp` | DONE |
+| Log data records: `Kv8LogRecord` (28-byte header + UTF-8 payload) on `<ch>.<sid>._log` | `Kv8Types.h`, `kv8log_impl.cpp` | DONE |
+| `Kv8DecodeLogRecord` / `Kv8DecodeLogSiteTail` -- consumer helpers | `Kv8Types.h` | DONE |
+| LOG phases L1-L6 implemented and tested end-to-end | `Kv8Planning/LOG_PHASES.md` | DONE |
+
+**Trace log details:**
+- Hot path: `KV8_LOGF_INFO("...", args)` formats into a 4096-byte stack
+  buffer and dispatches via the lazy runtime.  No heap allocation, no
+  syscalls in the typical path.
+- Source location (`__FILE__`, `__LINE__`, `__FUNCTION__`) and the format
+  string travel only **once**, in a registry record keyed by call-site
+  hash. Data records carry only `dwSiteHash` (4 bytes) plus payload.
+- Wire constants: `KV8_LOG_MAGIC = 0x4B563854 ("KV8T")`,
+  `KV8_LOG_MAX_PAYLOAD = 4095`, severity codes `Debug=0..Fatal=4`.
+- Compile-out: when `KV8_LOG_ENABLE` is undefined every `KV8_LOG*` macro
+  expands to `((void)0)` -- zero overhead, zero symbol references.
 
 **NOT present in kv8log:**
 
-- Trace / text log macros (`KV8_LOG`, `KV8_TRACE`, severity levels, format strings).
-- Log topic wire format.
-- Log consumer support in libkv8 / kv8scope.
+- Packed typed-args payload format (`Kv8LogArgType` enum is reserved in
+  the wire schema for L2+; current path emits pre-formatted UTF-8 text).
 
 ---
 
@@ -102,7 +126,8 @@ This is the instrumentation library that user applications link.
 |--------|---------|--------|
 | `kv8cli` | Stream telemetry/log records from Kafka to stdout (human-readable) | DONE |
 | `kv8bench` | End-to-end latency and throughput benchmark | DONE |
-| `kv8feeder` | Continuous live telemetry producer: three scalar feeds + UDT feeds | DONE |
+| `kv8bench_log` | LOG hot-path dispatch latency and throughput benchmark | DONE |
+| `kv8feeder` | Continuous live telemetry producer: three scalar feeds + UDT feeds + 5-level log emitter | DONE |
 | `kv8maint` | Channel/session admin: list, inspect, delete sessions and channels | DONE |
 | `kv8probe` | Deterministic synthetic sample producer for verification | DONE |
 | `kv8verify` | Timestamp integrity and sequence continuity checker | DONE |
@@ -198,6 +223,20 @@ All KV8_WORK_PLAN.md phases (P1 through P4) are implemented.
 | Live window: max 15s, allows zoom in/out; reverts to offline when panning back | DONE |
 | Session deletion without typing name confirmation (yes/no only) | DONE |
 
+#### LOG support (Phase L4)
+
+| Item | Status |
+|------|--------|
+| `LogStore` -- per-session in-memory ring of decoded `Kv8LogRecord`s, channel-wide site registry | DONE |
+| `LogPanel` -- dockable trace viewer: timestamp, severity badge, thread, site, message | DONE |
+| Severity row tinting (WARN amber, ERROR red, FATAL magenta) | DONE |
+| Severity filter checkboxes (Debug / Info / Warning / Error / Fatal) | DONE |
+| Substring text filter | DONE |
+| Auto-scroll (Follow) toggle; click-to-seek timeline integration | DONE |
+| Visible-window highlight overlay -- entries inside the waveform X-range stand out | DONE |
+| `ConsumerThread` subscribes to `<sid>._log` and channel `._registry`, dispatches to LogStore | DONE |
+| Toolbar `[Log]` / `[Log ON N]` button + `Ctrl+L` toggle | DONE |
+
 ---
 
 ### 2.5 kv8zoom -- 3D Path Viewer
@@ -251,201 +290,129 @@ review). Each issue now carries a confirmed status.
 
 ---
 
-## 4. Where We Stand for the LOG Phase
+## 4. Trace LOG Feature -- Completed (Phases L1..L6)
+
+The LOG feature was planned in [Kv8Planning/LOG_PHASES.md](Kv8Planning/LOG_PHASES.md)
+and delivered in six phases. All phases are complete and verified.
 
 ### 4.1 What "LOG" means
 
-kv8log was designed from the start to carry both **Telemetry** (numeric feeds,
-structured UDT feeds) and **Trace** (text log messages with severity levels).
-Telemetry is complete. Trace is not started.
-
 A trace message is fundamentally different from a telemetry sample:
 - It is a string (format + args), not a numeric value.
-- The format string shall be transmitted once and recoded into the regestry. 
-  Only args are sent after that with reference to regestry.
-- It carries a severity level (Debug / Info / Warning / Error / Fatal).
-- It shall carry a source location (file, line, function).
-- It is stored in a dedicated Kafka topic: `<channel>.<sessionID>._log`.
-- It does not have a counter ID or a Y-axis range.
-- kv8scope should display trace messages as event markers on the time axis,
-  not as waveforms.
-- a separate window shall display log in a table format. 
-- navigation on telemetry timeline and log list shall be synchronized
+- The format string is transmitted **once**, recorded in the channel
+  registry, and referenced from every data record by `dwSiteHash`.
+- It carries a severity level (Debug / Info / Warning / Error / Fatal),
+  a wall-clock nanosecond timestamp, the OS thread ID, and the CPU core
+  index at the moment of the call.
+- It lives in a dedicated Kafka topic: `<channel>.<sessionID>._log`.
+- kv8scope renders log entries in a dockable LogPanel with a click-to-seek
+  link to the waveform timeline; severity-coloured row tints make WARN /
+  ERROR / FATAL entries stand out without per-record markers on the graph.
 
-### 4.2 Current state -- what exists
+### 4.2 Phase delivery summary
 
-| Component | Exists? | Notes |
-|-----------|---------|-------|
-| `._log` topic name defined in kv8log_impl.cpp | YES | Topic is allocated at session open; no records are written |
-| Vtable entry for trace | NO | No `log` or `trace` fn pointer in `struct Vtable` |
-| `KV8_LOG` / `KV8_TRACE` macros | NO | Not in `KV8_Log.h` |
-| Wire type for trace messages | NO | No struct equivalent of `Kv8TelValue` for text |
-| kv8log_runtime trace implementation | NO | kv8log_impl.cpp has no log-producing function |
-| libkv8 consumer support for trace records | NO | `IKv8Consumer` has no log-specific decode |
-| kv8scope trace display | NO | No log panel, no event markers on time axis |
-| kv8cli trace output | PARTIAL | kv8cli prints raw bytes; no structured trace decode |
+| Phase | Title | Key files | Status |
+|-------|-------|-----------|--------|
+| L1 | Wire format | `libs/libkv8/include/kv8/Kv8Types.h` (`Kv8LogRecord`, `Kv8LogLevel`, `Kv8DecodeLogRecord`, site-tail codec) | DONE |
+| L2 | Producer (kv8log) | `libs/kv8log/include/kv8log/KV8_Log.h` (`KV8_LOG`, `KV8_LOGF`, severity wrappers), `libs/kv8log/src/Runtime.{h,cpp}`, `libs/kv8log/lib/kv8log_impl.cpp` (registry write + Produce on `._log`) | DONE |
+| L3 | Consumer + kv8cli | `examples/kv8cli/main.cpp` -- `[LOG]` lines with severity, site, message; site-registry resolution | DONE |
+| L4 | kv8scope LogPanel | `kv8scope/LogStore.{h,cpp}`, `kv8scope/LogPanel.{h,cpp}`, `kv8scope/ConsumerThread.cpp`, toolbar `[Log]` button + `Ctrl+L` | DONE |
+| L5 | Unit + integration tests | `libs/kv8log/test/test_log_levels.cpp`, `test_log_static_cache.cpp`, `test_log_e2e.cpp` (broker-conditional skip) | DONE -- 7/7 PASS |
+| L6 | Throughput benchmark | `examples/kv8bench_log/` + `kv8feeder` 5-level emitter | DONE |
 
-### 4.3 What needs to be built
-
-#### Layer 1: Wire format (Kv8Types.h)
-
-Define a new on-wire struct for trace records, stored in `<ch>.<sid>._log`:
+### 4.3 Wire format -- as built
 
 ```cpp
-// Severity levels -- stored as 1 byte in the wire record.
-enum class Kv8LogLevel : uint8_t
-{
-    Debug   = 0,
-    Info    = 1,
-    Warning = 2,
-    Error   = 3,
-    Fatal   = 4,
+// libs/libkv8/include/kv8/Kv8Types.h
+static const uint32_t KV8_LOG_MAGIC        = 0x4B563854u;  // "KV8T"
+static const uint16_t KV8_LOG_MAX_PAYLOAD  = 4095u;
+static const uint8_t  KV8_LOG_LEVEL_COUNT  = 5u;
+static const uint8_t  KV8_LOG_FLAG_TEXT    = 0x01u;
+static const uint16_t KV8_CID_LOG_SITE     = 0xFFFBu;
+
+enum class Kv8LogLevel : uint8_t {
+    Debug = 0, Info = 1, Warning = 2, Error = 3, Fatal = 4,
 };
 
-// On-wire trace record (variable length; max payload 4096 bytes).
-// Kafka message key = empty.
-// Kafka message value = Kv8LogRecord header + message bytes (no null terminator).
 #pragma pack(push, 1)
-struct Kv8LogRecord
-{
-    uint32_t dwMagic;     // 0x4B563854 ("KV8T") -- identifies record type
+struct Kv8LogRecord {                 // 28 bytes, fixed
+    uint32_t dwMagic;     // KV8_LOG_MAGIC
+    uint32_t dwSiteHash;  // FNV-32 of (basename, line, function); registry key
+    uint64_t tsNs;        // wall-clock nanoseconds since Unix epoch
+    uint32_t dwThreadID;  // OS thread ID at time of call
+    uint16_t wCpuID;      // CPU core index at time of call
     uint8_t  bLevel;      // Kv8LogLevel
-    uint8_t  bReserved;   // alignment / future use
-    uint16_t wMsgLen;     // byte length of the message string that follows
-    uint64_t tsNs;        // nanoseconds since Unix epoch
-    // Followed immediately by wMsgLen bytes of UTF-8 text (no null terminator).
+    uint8_t  bFlags;      // bit 0 = KV8_LOG_FLAG_TEXT (raw UTF-8 payload)
+    uint16_t wArgLen;     // payload bytes that follow
+    uint16_t wReserved;   // must be zero
+    // followed by wArgLen bytes of payload
 };
+static_assert(sizeof(Kv8LogRecord) == 28, "Kv8LogRecord must be 28 bytes");
 #pragma pack(pop)
 ```
 
-A separate optional wire field (or a second Kafka header) can carry source
-location (file:line) for debug-level messages.
+The site descriptor lives in the channel `._registry` topic as a
+`KafkaRegistryRecord` with `wCounterID = KV8_CID_LOG_SITE`. Tail layout:
 
-#### Layer 2: Vtable extension (Runtime.h)
+```
+uint16_t wFileLen ; char file[wFileLen]
+uint32_t dwLine
+uint16_t wFuncLen ; char func[wFuncLen]
+uint16_t wFmtLen  ; char fmt [wFmtLen]
+```
 
-Add two entries to `struct Vtable`:
+This means a 100-byte format string is transmitted **once per process run**,
+no matter how many million log records reference it.
+
+### 4.4 Hot path -- as built
 
 ```cpp
-void (*log)(kv8log_h h, uint8_t level, const char* msg, uint16_t len);
+// libs/kv8log/include/kv8log/KV8_Log.h (KV8_LOG_ENABLE on)
+KV8_LOG_INFO("kv8feeder started");
+KV8_LOGF_WARN("Waldhausen amplitude exceeded %.2f at t=%.6f s", amp, t);
 ```
 
-Both `kv8log_facade` (static, user side) and `kv8log_runtime` (shared, producer
-side) need to implement the resolution and dispatch path respectively.
+Each macro expansion owns a TU-scoped `static std::atomic<uint32_t>` site
+hash. First call: registers the site (one Kafka write to `._registry`);
+stores the hash in the atomic. Subsequent calls: relaxed atomic load, then
+format into a 4096-byte stack buffer and dispatch via `Runtime::Log`.
 
-#### Layer 3: User macros (KV8_Log.h)
+Measured on Windows / MSVC Release / single thread (kv8bench_log):
+- Throughput: 1.6 M calls/s on 1 thread, 2.2 M calls/s on 2 threads.
+- Dispatch latency p50 = 500 ns, p99 = 1.5 us. (Note: `TimerNow()`
+  measurement overhead alone is ~200 ns on Windows QPC, so the true
+  hot-path cost is closer to 300 ns.)
 
-```cpp
-// Enabled path:
-#define KV8_LOG(level, msg) \
-    kv8log::Runtime::Log(level, (msg), (uint16_t)strlen(msg))
+### 4.5 Compile-out path
 
-#define KV8_LOGF(level, fmt, ...) \
-    kv8log::Runtime::LogFmt(level, fmt, ##__VA_ARGS__)
+When `KV8_LOG_ENABLE` is not defined, every macro in `KV8_Log.h` expands
+to `((void)0)`. The user TU keeps zero references to kv8log symbols and
+the resulting binary has zero overhead from instrumentation.
 
-// Convenience wrappers:
-#define KV8_LOG_DEBUG(msg)   KV8_LOG(kv8log::LogLevel::Debug,   (msg))
-#define KV8_LOG_INFO(msg)    KV8_LOG(kv8log::LogLevel::Info,    (msg))
-#define KV8_LOG_WARN(msg)    KV8_LOG(kv8log::LogLevel::Warning, (msg))
-#define KV8_LOG_ERROR(msg)   KV8_LOG(kv8log::LogLevel::Error,   (msg))
-#define KV8_LOG_FATAL(msg)   KV8_LOG(kv8log::LogLevel::Fatal,   (msg))
-
-// Disabled path -- all expand to ((void)0).
-```
-
-`LogFmt` should format into a stack-allocated buffer (max 4096 bytes) to
-preserve the zero-allocation constraint.
-
-#### Layer 4: kv8log_runtime implementation
-
-Add a `kv8log_log()` exported function to `kv8log_impl.cpp`:
-- Formats the `Kv8LogRecord` header + text into a stack buffer.
-- Calls `IKv8Producer::Produce()` on the `._log` topic.
-- Thread-safe (producer is already thread-safe via internal rdkafka locking).
-- No heap allocation: format into a fixed 4096-byte stack buffer.
-
-#### Layer 5: libkv8 consumer (IKv8Consumer.h)
-
-Add a decode helper for `._log` topics. kv8cli and kv8scope ConsumerThread
-need to detect records on `._log` topics and parse `Kv8LogRecord`.
-
-Option A: add a `DecodeLogRecord()` static helper to `Kv8Types.h`.
-Option B: detect in the consumer loop by topic suffix `._log`.
-
-#### Layer 6: kv8scope -- log display
-
-Add a `LogPanel` (similar to StatsPanel) that:
-- Lists log records for the open session filtered by visible time window.
-- Columns: timestamp, level (colored badge), message.
-- Severity filter checkboxes (Debug / Info / Warning / Error / Fatal).
-- Click on a row seeks the waveform to that timestamp.
-- On the waveform time axis, draw small colored triangular event markers for
-  Warning, Error, and Fatal records (Debug and Info hidden by default).
-
-The ConsumerThread already subscribes to all session topics; adding `._log`
-subscription is straightforward.
-
-#### Layer 7: kv8cli -- log output
-
-kv8cli should decode and print log records in a human-readable line format:
-
-```
-[2026-04-28T10:35:12.345678Z] [INFO ] kv8feeder: producer started, 3 counters
-[2026-04-28T10:35:12.350000Z] [WARN ] cpu_temp: exceeded 95C threshold
-[2026-04-28T10:35:13.000000Z] [ERROR] motors: encoder fault on axis 2
-```
-
-### 4.4 Effort estimate
-
-| Layer | Scope | Effort |
-|-------|-------|--------|
-| Wire format + Kv8Types.h additions | Small | 0.5 d |
-| Vtable + Runtime.h + KV8_Log.h macros | Small | 0.5 d |
-| kv8log_runtime log producer function | Small | 0.5 d |
-| libkv8 consumer decode helper | Small | 0.25 d |
-| kv8scope LogPanel + waveform event markers | Medium | 2 d |
-| kv8cli log decoding and pretty-print | Small | 0.5 d |
-| Tests + kv8feeder example log calls | Small | 0.5 d |
-| **Total** | | **~5 d** |
-
-### 4.5 Design constraints
-
-- No heap allocation on the hot path: `LogFmt` uses a 4096-byte stack buffer.
-  Strings longer than 4095 bytes are truncated with a trailing "..." marker.
-- The `._log` topic is separate from `._registry` and data topics.
-  kv8scope does not need to rename existing topics.
-- Log records are NOT routed through `SpscRingBuffer<TelemetrySample>`.
-  A separate `SpscRingBuffer<Kv8LogRecord>` (or a simple mutex-guarded deque,
-  given much lower volume) feeds the LogPanel.
-- Severity filter in kv8scope must NOT be a Kafka consumer filter -- all records
-  are consumed and filtered client-side so that switching filters does not
-  require a Kafka seek.
-- Source location (file:line) is optional and off by default. Carrying it on
-  every record is wasteful; it should be a compile-time opt-in
-  (`KV8_LOG_WITH_LOCATION`).
-- The LOG feature must compile out completely when `KV8_LOG_ENABLE` is not
-  defined, consistent with the existing telemetry compile-out behavior.
+--- the resulting binary has zero overhead from instrumentation.
 
 ---
 
 ## 5. Recommended Next Steps
 
-Priority order:
+The planned scope (telemetry + UDT + trace LOG) is complete. Open work
+items below are improvements rather than blockers.
 
-1. **Fix kv8scope annotation bug** (issue #8 above). Annotations are used in
-   production sessions. The delete-marker logic needs a correctness review.
+1. **Packed typed-args log payload (LOG L7).** Replace `KV8_LOGF`'s
+   pre-formatted text with a packed `Kv8LogArgType` payload. The wire enum
+   is already reserved. Benefits: smaller records, deferred / locale-correct
+   formatting in the consumer, lower hot-path cost.
 
-2. **Fix kv8scope zoom stuck bug** (issue #9). This blocks detailed waveform
-   analysis.
+2. **Confirm nanosecond-zoom rendering quality (issue #10).** `kMinXSpan`
+   prevents the locked state, but visual verification at 1 ns spans on a
+   live session is still pending.
 
-3. **Implement LOG wire format + macros + runtime** (Layers 1-3 in section 4.3).
-   Self-contained; no UI changes required. kv8feeder can emit log records as a
-   first smoke test.
+3. **Optional source-location compile-time gate.** A `KV8_LOG_WITH_LOCATION=0`
+   build switch could strip `__FILE__` / `__FUNCTION__` from the binary for
+   size-sensitive embedded targets. Currently file/line/function always
+   appear in the registry tail (paid once per call site).
 
-4. **kv8cli log decode** (Layer 7). Quick validation that the log producer is
-   working before building the UI.
+4. **kv8scope event markers on the waveform timeline.** LogPanel covers the
+   read path; thin coloured triangles on the time axis for WARN/ERROR/FATAL
+   would make severity events visible without opening the panel.
 
-5. **kv8scope LogPanel** (Layer 6). The most visible user-facing feature of the
-   LOG phase.
-
-6. **test_monotonic and test_null_lib fixes** (issues #4 and #5). Both are
-   correctness issues in the test suite.

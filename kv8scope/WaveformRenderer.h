@@ -92,10 +92,35 @@ public:
     VizMode GetVizMode()    const { return m_eVizMode; }
 
     /// Pan the X-axis so that dTimestamp is centred in the visible window.
-    /// The current window width is preserved.  Auto-scroll must be
-    /// disabled by the caller before invoking this (the waveform would
-    /// immediately snap back to the live edge otherwise).
+    /// dTimestamp is in session-relative seconds (subtract GetSessionOrigin()
+    /// from any absolute Unix-epoch timestamp before calling).
+    /// The current window width is preserved.  The caller (ScopeWindow)
+    /// must observe ConsumeNavRequested() and pause auto-scroll, otherwise
+    /// the view immediately snaps back to the live edge.
     void NavigateTo(double dTimestamp);
+
+    /// True if NavigateTo() was called since the last consume.  Used by
+    /// ScopeWindow to drop out of live auto-scroll when any panel
+    /// (annotations, log, future) requests a programmatic seek.
+    bool ConsumeNavRequested()
+    {
+        bool b = m_bNavRequested;
+        m_bNavRequested = false;
+        return b;
+    }
+
+    /// Consume the most recent log-marker click on the waveform.
+    /// Returns true exactly once after the user clicked an event marker;
+    /// qwTsNsOut receives the absolute Unix-epoch ns timestamp of the
+    /// clicked entry.  LogPanel uses this to scroll its table to the
+    /// matching row -- the two views stay synchronised in both directions.
+    bool ConsumeLogMarkerClick(uint64_t& qwTsNsOut)
+    {
+        if (!m_bLogMarkerClicked) return false;
+        m_bLogMarkerClicked = false;
+        qwTsNsOut = m_qwLogMarkerClickTsNs;
+        return true;
+    }
 
     /// Set / get the mode for a single counter.
     void    SetCounterVizMode(uint32_t dwHash, uint16_t wCounterID, VizMode m);
@@ -288,6 +313,13 @@ public:
     void SetLogMarkersVisible(bool b) { m_bLogMarkersVisible = b; }
     bool GetLogMarkersVisible() const { return m_bLogMarkersVisible; }
 
+    /// Push the currently selected log entry's timestamp (Unix-epoch ns)
+    /// from LogPanel.  When non-zero, every plot draws a dashed vertical
+    /// cursor at that time and the matching event marker (if any) is
+    /// emphasised with a halo so the two views stay visually linked.
+    /// Pass 0 to clear.
+    void SetSelectedLogTsNs(uint64_t qwTsNs) { m_qwSelectedLogTsNs = qwTsNs; }
+
 private:
     static constexpr double kNaN        = std::numeric_limits<double>::quiet_NaN();
     static constexpr double kMaxLiveSpan = 15.0;  // maximum live window in seconds
@@ -410,6 +442,11 @@ private:
     // Pending programmatic X navigation (set by NavigateTo, consumed in Render).
     bool    m_bNavPending  = false;
     double  m_dNavTarget   = 0.0;
+    bool    m_bNavRequested = false;  // sticky flag for ConsumeNavRequested()
+
+    // Last log-marker click on the waveform (consumed by LogPanel).
+    bool     m_bLogMarkerClicked    = false;
+    uint64_t m_qwLogMarkerClickTsNs = 0;
 
     // X-axis: true once the initial view has been placed with real data.
     bool    m_bInitialViewApplied = false;
@@ -466,6 +503,10 @@ private:
     // ---- Trace-log marker state (Phase L4) -----------------------------
     class LogStore*  m_pLogStore                = nullptr;
     bool             m_bLogMarkersVisible       = true;
+    // Pushed by LogPanel each frame: timestamp (Unix-epoch ns) of the
+    // currently selected log entry, or 0 when no row is selected.  Used
+    // to draw a dashed vertical cursor + halo on the matching marker.
+    uint64_t         m_qwSelectedLogTsNs        = 0;
 
     // ---- Private helpers ------------------------------------------------
 
@@ -489,6 +530,14 @@ private:
     /// for WARN/ERROR/FATAL entries.  Must be called inside a BeginPlot
     /// / EndPlot block.  Phase L4.
     void RenderLogMarkersInPlot();
+
+    /// Draw a dashed vertical cursor at m_qwSelectedLogTsNs (Unix-epoch
+    /// ns) so the selected log entry remains visible on every plot even
+    /// when m_bLogMarkersVisible is off or the entry is DEBUG/INFO (which
+    /// have no triangle marker).  No-op when no row is selected or the
+    /// timestamp is outside the visible X window.  Must be called inside
+    /// a BeginPlot / EndPlot block.
+    void RenderSelectedLogCursorInPlot();
 
     /// Decimate [pTS,pVS,N] into at most W pixel-column avg samples.
     /// Results written into m_scratchX (x midpoints) and m_scratchY (avg).

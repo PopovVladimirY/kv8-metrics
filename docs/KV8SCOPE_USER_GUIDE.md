@@ -24,12 +24,13 @@ each counter as a per-panel waveform with live statistics.
 9. [Visualization Modes](#9-visualization-modes)
 10. [Crossbar](#10-crossbar)
 11. [Annotations](#11-annotations)
-12. [Per-Counter Options](#12-per-counter-options)
-13. [Statistics Panel](#13-statistics-panel)
-14. [Themes](#14-themes)
-15. [Fonts](#15-fonts)
-16. [Configuration File](#16-configuration-file)
-17. [Keyboard Shortcut Reference](#17-keyboard-shortcut-reference)
+12. [Log Panel](#12-log-panel)
+13. [Per-Counter Options](#13-per-counter-options)
+14. [Statistics Panel](#14-statistics-panel)
+15. [Themes](#15-themes)
+16. [Fonts](#16-fonts)
+17. [Configuration File](#17-configuration-file)
+18. [Keyboard Shortcut Reference](#18-keyboard-shortcut-reference)
 
 ---
 
@@ -328,6 +329,7 @@ current time cursor position when the crossbar is active.
 | **Show All** | Make all counters visible |
 | **Hide All** | Hide all counters |
 | **[Stats]** / **[Stats ON]** | Toggle the Statistics panel (also Ctrl+I) |
+| **[Log]** / **[Log ON N]** | Toggle the Log Panel (also Ctrl+L); badge shows record count |
 | **S** | Switch all counters to Simple visualization mode |
 | **R** | Switch all counters to Range visualization mode |
 | **C** | Switch all counters to Cyclogram visualization mode |
@@ -438,7 +440,67 @@ hide all flags on the waveform without deleting them.
 
 ---
 
-## 12. Per-Counter Options
+## 12. Log Panel
+
+The Log Panel is a dockable trace-log viewer that runs alongside the
+waveforms in every Scope window. It receives every `Kv8LogRecord` published
+to the session's `_log` topic by applications instrumented with `kv8log`
+(see [KV8LIB_API_REFERENCE.md, section 5](KV8LIB_API_REFERENCE.md#5-kv8log----trace-logging-api)).
+
+### Opening the panel
+
+| Method | Action |
+|---|---|
+| Toolbar **[Log]** / **[Log ON N]** | Toggle the panel; the count badge shows total records currently in the panel for that session. |
+| **Ctrl + L** | Same as the toolbar button while a Scope window is focused. |
+
+### Layout
+
+The panel is a multi-column table; each row is one trace record:
+
+| Column | Description |
+|---|---|
+| Time | Wall-clock timestamp of the record (microsecond precision). |
+| Lvl | Severity badge: `DEBUG`, `INFO`, `WARN`, `ERROR`, `FATAL`. Colour-coded. |
+| Thread | OS thread ID at the moment of emission. |
+| Site | `<basename>:<line> <function>` -- resolved from the channel registry. |
+| Message | UTF-8 payload formatted by the producer. |
+
+WARN, ERROR, and FATAL rows additionally tint their full row background
+(amber, red, magenta respectively) so severity events are visible at a
+glance even when the panel is dense.
+
+### Toolbar controls
+
+| Control | Description |
+|---|---|
+| **D / I / W / E / F** check boxes | Severity filter -- shown checked by default. Unchecked levels are hidden but still consumed and stored, so re-enabling does not require a Kafka seek. |
+| Filter text box | Substring match against the formatted message. Empty = no filter. |
+| **Follow** check box | When enabled, auto-scrolls the table to the newest record. Click any row to disable Follow automatically. |
+
+### Timeline integration
+
+- Records inside the waveform's currently visible X range are highlighted
+  with a brighter row background. Pan or zoom the waveform and the
+  highlight follows.
+- Click a row to seek the waveform timeline to that record's timestamp.
+  The waveform centres on the chosen moment without changing zoom.
+- Conversely, scrolling the waveform updates the highlight band in the
+  Log Panel so the two views stay synchronised.
+
+### Storage and lifetime
+
+- Records are kept in an in-memory ring inside `LogStore`. Old records are
+  evicted once the ring fills; the configured capacity is large enough for
+  typical sessions but is not unbounded.
+- The site registry (file / line / function / format string per call site)
+  lives at the channel level, not the session level: opening a session in
+  kv8scope replays the channel `_registry` topic from offset 0 so every
+  record's site is resolved even when historical sessions are reopened.
+
+---
+
+## 13. Per-Counter Options
 
 Right-click a counter row in the Counter List to open its context menu:
 
@@ -458,7 +520,7 @@ Custom Y ranges, colors, and per-counter visualization modes are persisted to
 
 ---
 
-## 13. Statistics Panel
+## 14. Statistics Panel
 
 Open the Statistics Panel with **[Stats]** in the toolbar or **Ctrl+I** while
 a Scope window is focused.  The panel is a floating window and can be
@@ -478,7 +540,7 @@ are both resizable by dragging the column divider.  The left column defaults to
 
 ---
 
-## 14. Themes
+## 15. Themes
 
 Select a theme via **View > Theme**.  The choice is saved to `kv8scope.json`
 and restored on next launch.
@@ -503,7 +565,7 @@ toward white or black as needed to maintain a minimum 3:1 contrast ratio.
 
 ---
 
-## 15. Fonts
+## 16. Fonts
 
 Select a font and size via **View > Font**.  Changes take effect immediately
 and are saved to `kv8scope.json`.
@@ -521,7 +583,7 @@ option.
 
 ---
 
-## 16. Configuration File
+## 17. Configuration File
 
 `kv8scope.json` is read from and written to the working directory.  It is
 created automatically on first launch.  Most settings are managed through the
@@ -561,11 +623,12 @@ restart.
 
 ---
 
-## 17. Keyboard Shortcut Reference
+## 18. Keyboard Shortcut Reference
 
 | Shortcut | Action |
 |---|---|
 | Ctrl + I | Toggle Statistics panel |
+| Ctrl + L | Toggle Log Panel |
 | Ctrl + N | Add annotation at center of visible window |
 | Ctrl + Shift + N | Toggle Annotation panel |
 | Ctrl + left-click (in graph) | Add annotation at clicked sample |

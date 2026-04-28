@@ -11,18 +11,19 @@ The project is split into three top-level source directories:
 
 - `libs/` -- shared libraries (`libkv8`, `kv8util`, `kv8log`)
 - `tools/` -- maintenance and diagnostic CLI tools (`kv8maint`, `kv8probe`, `kv8verify`)
-- `examples/` -- standalone example programs (`kv8bench`, `kv8cli`, `kv8feeder`)
+- `examples/` -- standalone example programs (`kv8bench`, `kv8bench_log`, `kv8cli`, `kv8feeder`)
 
 All binaries are installed to `build/_output_/bin/` by `cmake --install`.
 
 | Binary | Role | One-line description |
 |--------|------|----------------------|
 | `kv8cli` | Consumer | Stream telemetry and logs from Kafka to stdout |
-| `kv8feeder` | Producer | Continuous live telemetry producer; scalar and UDT feeds |
+| `kv8feeder` | Producer | Continuous live telemetry producer; scalar and UDT feeds; emits a 5-level trace-log stream so the kv8scope Log Panel always has live data |
 | `kv8maint` | Admin | Inspect, audit, and delete channels and sessions |
 | `kv8probe` | Producer | Write deterministic synthetic samples for verification |
 | `kv8verify` | Consumer | Verify timestamp integrity and sequence continuity |
 | `kv8bench` | Producer + Consumer | Measure end-to-end latency and throughput |
+| `kv8bench_log` | Producer | Stress the `KV8_LOG*` hot path and report throughput / latency percentiles |
 
 ---
 
@@ -337,6 +338,53 @@ The warmup sentinel message (`nSeq == UINT64_MAX`) is automatically skipped.
 
 ---
 
+### 2.6 kv8bench_log -- KV8_LOG hot-path benchmark
+
+Micro-benchmark for the `kv8log` producer hot path. It spins up N worker
+threads (default: 2) that hammer `KV8_LOGF_INFO` in a tight loop, samples
+latency 1-in-100 calls, and reports per-second progress plus a final
+summary with throughput and latency percentiles.
+
+```text
+Usage:
+  kv8bench_log [options]
+
+Options:
+  --threads <N>          Number of worker threads (default: 2; max: 32)
+  --duration <sec>       Run duration in seconds (default: 10)
+  --brokers <host:port>  Kafka bootstrap servers (default: localhost:19092)
+  --user <user> / --pass <pass>
+                         SASL credentials (default: kv8producer / kv8secret)
+```
+
+**Acceptance thresholds (exit 1 on FAIL):**
+
+| Metric | Threshold |
+|--------|-----------|
+| Throughput | > 1,000,000 calls / second (aggregate across threads) |
+| Per-call latency p50 | < 200 ns |
+| Per-call latency p99 | < 1000 ns |
+
+A timestamped report is written to `kv8bench_log_<unix-ts>.txt` in the
+current working directory. Recent representative numbers on a desktop
+x86_64 host: 1.6 M calls/s on 1 thread, 2.2 M calls/s on 2 threads. The
+latency thresholds are aspirational on shared developer hardware -- a FAIL
+on latency alone with PASS on throughput is reported but not necessarily
+actionable.
+
+**Implementation notes:**
+
+- Each worker thread owns a `static std::atomic<uint64_t>` progress
+  counter (templated `HotPathLoop<Idx>` so the static is unique per
+  thread) and batches updates every 1024 iterations to keep the contended
+  cache line traffic minimal.
+- Latency is measured around the macro call only -- not around the
+  Kafka send -- so the number reflects what the calling thread actually
+  pays. Network/broker effects are absorbed asynchronously by the
+  background `Runtime` thread.
+
+---
+
 ## 3. The kv8util Shared Library
 
 The `libs/kv8util/` directory provides cross-platform utility code shared by
@@ -346,11 +394,20 @@ all Kv8 tools. Two libraries are involved:
 |---------|-----------|----------|---------|
 | **libkv8** | `kv8` | `libs/libkv8/` | Core Kafka abstraction: `Kv8Config`, `Kv8Producer`, `Kv8Consumer`, topic discovery, registry parsing |
 | **kv8util** | `kv8util` | `libs/kv8util/` | Application utilities: timing, statistics, signal handling, CLI config builder |
+| **kv8log** | (macros) | `libs/kv8log/` | Trace logging: `KV8_LOG_INFO`, `KV8_LOGF_WARN`, etc. Two artefacts -- `kv8log_facade` (static, link-time) and `kv8log_runtime` (shared, lazy-loaded) -- so application TUs that compile out the macros carry zero kv8log symbols |
 
 **libkv8** encapsulates all interaction with librdkafka behind a clean C++
 API. Application code never calls `rd_kafka_*` functions directly. See
 [kv8util_API_REFERENCE.md](kv8util_API_REFERENCE.md) for the full API
 reference.
+
+**kv8log** adds a third pillar to the telemetry surface: alongside scalar
+counters and UDT (user-defined type) blob telemetry, applications emit
+discrete trace events with `KV8_LOG_INFO("...")` or `KV8_LOGF_WARN("%d
+items", n)`. Records flow over Kafka into the kv8scope Log Panel and can
+be replayed historically. See
+[KV8LIB_API_REFERENCE.md, section 5](docs/KV8LIB_API_REFERENCE.md#5-kv8log----trace-logging-api)
+for the macro reference.
 
 **kv8util** provides the following modules:
 
@@ -435,6 +492,7 @@ build/_output_/bin/
     kv8probe[.exe]         -- timestamp integrity probe (producer)
     kv8verify[.exe]        -- telemetry integrity verifier
     kv8bench[.exe]         -- latency benchmark with verification
+    kv8bench_log[.exe]     -- KV8_LOG hot-path benchmark
 ```
 
 On Linux the `.exe` suffix is absent. All command examples below use the
