@@ -327,7 +327,7 @@ struct SessionMeta
     std::string sSessionPrefix; ///< "<channel>.<sessionID>"
     std::string sName;          ///< Human-readable session name (from 0xFFFE record)
     std::string sLogTopic;      ///< "<channel>.<sessionID>._log"
-    std::string sControlTopic;  ///< "<channel>.<sessionID>._control"
+    std::string sControlTopic;  ///< "<channel>.<sessionID>._ctl"
 
     /// Registry hash -> group display name  (from 0xFFFF records).
     std::map<uint32_t, std::string> hashToGroup;

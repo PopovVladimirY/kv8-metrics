@@ -765,7 +765,7 @@ A complete channel produces the following topics:
 ```
 <prefix>._registry                                          -- channel-level (shared by all sessions)
 <prefix>.<session>._log                                     -- session trace log
-<prefix>.<session>._control                                 -- bidirectional feed control
+<prefix>.<session>._ctl                                     -- bidirectional feed control (JSON)
 <prefix>.<session>.d.<channelID_08X>                       -- group virtual topic (GROUP record only; no data)
 <prefix>.<session>.d.<channelID_08X>.<counterID_04X>       -- telemetry data (one per counter)
 ```
@@ -776,7 +776,7 @@ and two counter groups (channelIDs 0 and 1) each containing two counters:
 ```
 kv8.test._registry
 kv8.test.20260222T143015Z-1A3F-7C02._log
-kv8.test.20260222T143015Z-1A3F-7C02._control
+kv8.test.20260222T143015Z-1A3F-7C02._ctl
 kv8.test.20260222T143015Z-1A3F-7C02.d.00000000
 kv8.test.20260222T143015Z-1A3F-7C02.d.00000000.0000
 kv8.test.20260222T143015Z-1A3F-7C02.d.00000000.0001
@@ -791,7 +791,7 @@ Key properties of each topic type:
 |-------|-------|---------------------|--------|
 | `_registry` | Channel (shared) | `compact` | Counter and group metadata; one message per counter or group |
 | `_log` | Session | `delete` (retention: 168 h default) | session trace log in binary kv8 packet format |
-| `_control` | Session | `delete` | ENABLE/DISABLE feed-control commands |
+| `_ctl` | Session | `delete` | ENABLE/DISABLE feed-control commands (JSON format) |
 | `d.<channelID_08X>` | Session | `compact` | Group virtual topic (GROUP registry record only; no data messages) |
 | `d.<channelID_08X>.<counterID_04X>` | Session | `delete` (retention: 168 h default) | Binary `Kv8TelValue` telemetry samples for one counter |
 
@@ -999,7 +999,7 @@ Resulting topics on the broker:
 ```
 myapp.prod._registry
 myapp.prod.20260222T090000Z-0001-ABCD._log
-myapp.prod.20260222T090000Z-0001-ABCD._control
+myapp.prod.20260222T090000Z-0001-ABCD._ctl
 myapp.prod.20260222T090000Z-0001-ABCD.d.00000000
 myapp.prod.20260222T090000Z-0001-ABCD.d.00000000.0000
 myapp.prod.20260222T090000Z-0001-ABCD.d.00000000.0001
@@ -1344,7 +1344,7 @@ KV8_UDT_DISABLE(env_feed);   // stop emitting; Add/AddTs become no-ops
 KV8_UDT_ENABLE(env_feed);    // resume
 ```
 
-`Enable` and `Disable` write to the session `._control` topic so all
+`Enable` and `Disable` write to the session `._ctl` topic so all
 consumers observing the channel see the state change.
 
 ---
@@ -1678,7 +1678,7 @@ C identifier name supplied to `FN`.
 
 | Macro | Purpose |
 |-------|---------|
-| `KV8_UDT_ENABLE(var)` | Resume emission; writes to `._control` topic. |
+| `KV8_UDT_ENABLE(var)` | Resume emission; writes to `._ctl` topic. |
 | `KV8_UDT_DISABLE(var)` | Pause emission; `Add`/`AddTs` become no-ops. |
 
 **Struct-only (no schema) -- when `KV8_LOG_ENABLE` is not defined:**

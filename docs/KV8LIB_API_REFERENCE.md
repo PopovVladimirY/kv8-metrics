@@ -259,7 +259,7 @@ Aggregated session metadata built by `DiscoverSessions()`:
 | `sSessionPrefix` | `string` | `<channel>.<sessionID>` |
 | `sName` | `string` | Human-readable session name |
 | `sLogTopic` | `string` | `<prefix>._log` |
-| `sControlTopic` | `string` | `<prefix>._control` |
+| `sControlTopic` | `string` | `<prefix>._ctl` |
 | `hashToGroup` | `map<uint32_t, string>` | Registry hash to group display name |
 | `hashToCounters` | `map<uint32_t, vector<CounterMeta>>` | Hash to counter list |
 | `dataTopics` | `set<string>` | All data topic names |

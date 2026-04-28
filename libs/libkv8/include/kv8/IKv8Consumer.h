@@ -239,7 +239,7 @@ public:
 
     // ── Session deletion ───────────────────────────────────────────────────────
 
-    /// Delete all Kafka topics that belong to @p sm (data topics + _log + _control)
+    /// Delete all Kafka topics that belong to @p sm (data topics + _log + _ctl)
     /// using the Kafka Admin API.  Requires the broker ACL to allow topic deletion.
     ///
     /// @param sm  Session metadata returned by DiscoverSessions().

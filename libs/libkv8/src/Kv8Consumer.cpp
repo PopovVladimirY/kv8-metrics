@@ -213,7 +213,7 @@ static void ParseRegistryRecord(const void                         *pPayload,
         sm.sSessionPrefix = sPrefix;
         sm.sSessionID     = sPrefix.substr(sChannel.size() + 1);
         sm.sLogTopic      = sPrefix + "._log";
-        sm.sControlTopic  = sPrefix + "._control";
+        sm.sControlTopic  = sPrefix + "._ctl";
         sessions[sPrefix] = std::move(sm);
     }
     SessionMeta &sm = sessions[sPrefix];
