@@ -30,9 +30,10 @@ consume and verify it with the Kv8 tools.
 
 ## 1. Tools Overview
 
-The project is split into three top-level source directories:
+The project is split into four top-level source directories:
 
 - `libs/` -- shared libraries (`libkv8`, `kv8util`, `kv8log`)
+- `kv8scope/` -- ImGui/OpenGL oscilloscope application (the primary visualization tool)
 - `tools/` -- maintenance and diagnostic CLI tools (`kv8maint`, `kv8probe`, `kv8verify`)
 - `examples/` -- standalone example programs (`kv8bench`, `kv8bench_log`, `kv8cli`, `kv8feeder`)
 
@@ -40,8 +41,9 @@ All binaries are installed to `build/_output_/bin/` by `cmake --install`.
 
 | Binary | Role | One-line description |
 |--------|------|----------------------|
-| `kv8cli` | Consumer | Stream telemetry and logs from Kafka to stdout |
+| `kv8scope` | **Visualizer** | Real-time oscilloscope: live waveforms per counter, dockable log panel (Ctrl+L), per-counter statistics, session browser |
 | `kv8feeder` | Producer | Continuous live telemetry producer; scalar and UDT feeds; emits a 5-level trace-log stream so the kv8scope Log Panel always has live data |
+| `kv8cli` | Consumer | Stream telemetry and logs from Kafka to stdout |
 | `kv8maint` | Admin | Inspect, audit, and delete channels and sessions |
 | `kv8probe` | Producer | Write deterministic synthetic samples for verification |
 | `kv8verify` | Consumer | Verify timestamp integrity and sequence continuity |
@@ -550,6 +552,25 @@ docker compose logs kafka | Select-String "started"
 
 ### 5.2 Produce telemetry
 
+**Options:**
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `/KV8.brokers=HOST:PORT` | `localhost:19092` | Kafka bootstrap broker |
+| `/KV8.channel=NAME` | `kv8log/kv8feeder` | Channel prefix (slashes auto-converted to dots) |
+| `/KV8.user=USER` | `kv8producer` | SASL username |
+| `/KV8.pass=PASS` | `kv8secret` | SASL password |
+| `--rate.counter=HZ` | `100` | `Numbers/Counter` sample rate |
+| `--rate.wald=HZ` | `10000` | `Numbers/Wald` sample rate |
+| `--rate.phases=HZ` | `100000` | `Scope/Phases` sample rate |
+| `--udt` | off | Enable UDT feeds (WeatherStation + Aerial platform) |
+| `--duration=SECONDS` | `0` (forever) | Stop after N seconds |
+
+A log-emitter thread always runs alongside the scalar feeds. It publishes
+synthetic trace events at every severity level (Debug every 500 ms, Info 2 s,
+Warn 5 s, Error 11 s, Fatal 23 s) so the kv8scope Log Panel has live data
+without any extra flags.
+
 **Scalar feeds (default):**
 
 ```powershell
@@ -563,13 +584,14 @@ cd build\_output_\bin
     --duration=30
 ```
 
-This starts three scalar threads:
+This starts three scalar threads plus the log emitter:
 
 | Feed | Rate | Signal |
 |------|------|--------|
 | `Numbers/Counter` | 100 Hz | Wrapping integer 0..1023 |
 | `Numbers/Wald` | 10,000 Hz | Gaussian random walk -4000..4000 |
 | `Scope/Phases` | 100,000 Hz | Piecewise-constant cyclogram -5..5 |
+| *(log emitter)* | always on | Debug/Info/Warn/Error/Fatal trace events |
 
 **UDT feeds (add `--udt`):**
 
@@ -582,7 +604,7 @@ This starts three scalar threads:
     --udt --duration=30
 ```
 
-Adds two UDT (User-Defined Type) feeds whose fields each appear as individual
+Adds four UDT (User-Defined Type) feeds whose fields each appear as individual
 counters in kv8scope:
 
 | UDT Feed | Rate | Fields |
@@ -603,12 +625,49 @@ Each run creates a unique session under the channel prefix. The sink writes:
 | Topic suffix | Content |
 |-------------|---------|
 | `_registry` | Counter and group metadata (shared across sessions) |
-| `_log` | log trace messages |
+| `_log` | Trace log records from the log emitter |
 | `d.<channelID>.<counterID>` | Binary telemetry samples (one topic per counter) |
 
-### 5.3 Consume with kv8cli
+### 5.3 Visualize with kv8scope
 
-In a **separate terminal**:
+kv8scope connects to Kafka, discovers sessions automatically, and renders each
+counter as a scrolling waveform. The log panel (Ctrl+L) shows trace events
+tinted by severity alongside the waveform timeline.
+
+In a **separate terminal**, launch kv8scope and point it at the broker:
+
+```powershell
+.\kv8scope.exe
+```
+
+On first run, the **Connection** dialog appears. Fill in:
+
+| Field | Value |
+|-------|-------|
+| Brokers | `localhost:19092` |
+| Channel | `kv8/test` |
+| Username | `kv8producer` |
+| Password | `kv8secret` |
+
+Click **Connect**. Within a few seconds the session list populates, waveforms
+start scrolling, and the Log Panel fills with trace events from kv8feeder.
+
+Key bindings:
+
+| Key | Action |
+|-----|--------|
+| Ctrl+L | Toggle Log Panel |
+| Mouse wheel | Zoom waveform time axis |
+| Left-click log row | Seek waveform to that event timestamp |
+
+On Linux: `./kv8scope` (no `.exe`).
+
+---
+
+### 5.4 Consume with kv8cli (text output)
+
+For scripted consumption or debugging without the GUI, use kv8cli in a
+**separate terminal**:
 
 ```powershell
 .\kv8cli.exe --channel kv8/test --brokers localhost:19092 --user kv8producer --pass kv8secret
@@ -622,7 +681,7 @@ Press **Ctrl+C** or **Esc** to stop. Expected output:
 ...
 ```
 
-### 5.4 Stop everything
+### 5.5 Stop everything
 
 ```powershell
 # Stop Kafka (keep data):
