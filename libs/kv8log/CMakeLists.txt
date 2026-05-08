@@ -65,6 +65,7 @@ enable_testing()
 foreach(test_name
         test_compile_out
         test_null_lib
+        test_no_runtime
         test_default_channel
         test_monotonic
         test_log_wire
