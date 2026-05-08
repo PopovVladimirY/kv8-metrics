@@ -73,8 +73,8 @@ int main(int argc, char** argv)
 
     // ── Pre-clean: drop any leftover channel from a prior run ──────────────
     {
-        auto kCfg = kv8util::BuildKv8Config(
-            a.sBrokers, "sasl_plaintext", "PLAIN", a.sUser, a.sPass, "");
+        auto kCfg = kv8util::BuildKv8Config({
+            a.sBrokers, "sasl_plaintext", "PLAIN", a.sUser, a.sPass, ""});
         auto cleaner = kv8::IKv8Consumer::Create(kCfg);
         try { cleaner->DeleteChannel(a.sChannel); } catch (...) {}
     }
@@ -97,8 +97,8 @@ int main(int argc, char** argv)
     KV8_TEL_FLUSH();
 
     // ── Consumer side ──────────────────────────────────────────────────────
-    auto kCfg = kv8util::BuildKv8Config(
-        a.sBrokers, "sasl_plaintext", "PLAIN", a.sUser, a.sPass, "");
+    auto kCfg = kv8util::BuildKv8Config({
+        a.sBrokers, "sasl_plaintext", "PLAIN", a.sUser, a.sPass, ""});
     auto consumer = kv8::IKv8Consumer::Create(kCfg);
     EXPECT(consumer != nullptr);
 

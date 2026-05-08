@@ -18,6 +18,7 @@
 #include "AnnotationStore.h"
 
 #include <kv8/IKv8Producer.h>
+#include <kv8util/Kv8Platform.h>
 
 #include <algorithm>
 #include <cctype>
@@ -299,15 +300,7 @@ void AnnotationStore::Add(double dTimestamp,
     // ISO 8601 wall-clock timestamp for display
     {
         std::time_t tSec = static_cast<std::time_t>(dTimestamp);
-        struct tm tmv;
-#ifdef _WIN32
-        gmtime_s(&tmv, &tSec);
-#else
-        gmtime_r(&tSec, &tmv);
-#endif
-        char tbuf[32];
-        std::strftime(tbuf, sizeof(tbuf), "%Y-%m-%dT%H:%M:%SZ", &tmv);
-        ann.sCreatedAt = tbuf;
+        ann.sCreatedAt = kv8util::FormatUtcCompact(tSec);
     }
 
     m_annotations.push_back(ann);

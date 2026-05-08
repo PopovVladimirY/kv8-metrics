@@ -21,8 +21,8 @@ inline bool BrokerAvailable(const std::string& sBrokers,
 {
     try
     {
-        auto kCfg = kv8util::BuildKv8Config(
-            sBrokers, "sasl_plaintext", "PLAIN", sUser, sPass, "");
+        auto kCfg = kv8util::BuildKv8Config({
+            sBrokers, "sasl_plaintext", "PLAIN", sUser, sPass, ""});
         auto consumer = kv8::IKv8Consumer::Create(kCfg);
         if (!consumer) return false;
         // ListChannels does a metadata round-trip; failure surfaces as throw.

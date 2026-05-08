@@ -98,7 +98,7 @@ target_link_libraries(kv8zoom PRIVATE
 )
 
 if(MSVC)
-    # /wd4324 - padded struct (expected from alignas(64) in SpscRingBuffer)
+    # /wd4324 - padded struct (expected from alignas(64) in SpscFixedRing)
     # /wd4701 - potentially uninitialized (persists from uWS WebSocketProtocol.h
     #           even with SYSTEM includes due to MSVC analysis depth)
     target_compile_options(kv8zoom PRIVATE /W4 /WX- /wd4324 /wd4701)

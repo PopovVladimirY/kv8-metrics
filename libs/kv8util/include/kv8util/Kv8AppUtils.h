@@ -134,8 +134,34 @@ inline bool CheckEscKey()
 // BuildKv8Config -- construct a kv8::Kv8Config from common CLI parameters
 //
 // Eliminates the repetitive 5-6 line Kv8Config construction that appears in
-// every tool's main() and helper functions.
+// every tool's main() and helper functions.  The struct overload is preferred
+// at call sites because the named fields document each argument (the legacy
+// positional overload is retained as a thin wrapper for backwards
+// compatibility with existing call sites).
 ////////////////////////////////////////////////////////////////////////////////
+
+struct Kv8ConfigInput
+{
+    std::string sBrokers;
+    std::string sSecurityProto;
+    std::string sSaslMechanism;
+    std::string sUser;
+    std::string sPass;
+    std::string sGroupID;   // optional; left empty -> producer-style config
+};
+
+inline kv8::Kv8Config BuildKv8Config(const Kv8ConfigInput &in)
+{
+    kv8::Kv8Config cfg;
+    cfg.sBrokers       = in.sBrokers;
+    cfg.sSecurityProto = in.sSecurityProto;
+    cfg.sSaslMechanism = in.sSaslMechanism;
+    cfg.sUser          = in.sUser;
+    cfg.sPass          = in.sPass;
+    if (!in.sGroupID.empty())
+        cfg.sGroupID = in.sGroupID;
+    return cfg;
+}
 
 inline kv8::Kv8Config BuildKv8Config(
     const std::string &sBrokers,
@@ -145,15 +171,8 @@ inline kv8::Kv8Config BuildKv8Config(
     const std::string &sPass,
     const std::string &sGroupID = "")
 {
-    kv8::Kv8Config cfg;
-    cfg.sBrokers       = sBrokers;
-    cfg.sSecurityProto = sSecurityProto;
-    cfg.sSaslMechanism = sSaslMechanism;
-    cfg.sUser          = sUser;
-    cfg.sPass          = sPass;
-    if (!sGroupID.empty())
-        cfg.sGroupID = sGroupID;
-    return cfg;
+    return BuildKv8Config(Kv8ConfigInput{
+        sBrokers, sSecurityProto, sSaslMechanism, sUser, sPass, sGroupID});
 }
 
 } // namespace kv8util

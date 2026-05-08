@@ -105,7 +105,7 @@ int main(int argc, char *argv[])
         else { fprintf(stderr, "[TEST] Unknown arg: %s\n", argv[i]); return 1; }
     }
 
-    auto kCfg = BuildKv8Config(sBrokers, sSecProto, sSaslMech, sUser, sPass);
+    auto kCfg = BuildKv8Config({sBrokers, sSecProto, sSaslMech, sUser, sPass, {}});
 
     Section("1. Connection check");
 

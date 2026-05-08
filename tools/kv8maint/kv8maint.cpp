@@ -35,6 +35,7 @@
 #include <kv8/IKv8Consumer.h>
 
 #include <kv8util/Kv8AppUtils.h>
+#include <kv8util/Kv8Platform.h>
 
 #include <cstdio>
 #include <cstdlib>
@@ -201,16 +202,7 @@ static std::string FormatFiletime(uint32_t dwHi, uint32_t dwLo)
     uint64_t tSec100ns = ft / 10000000ULL;
     if (tSec100ns < EPOCH_DIFF_S) return "(before 1970)";
     time_t tSec = (time_t)(tSec100ns - EPOCH_DIFF_S);
-
-    struct tm tmBuf;
-#ifdef _WIN32
-    gmtime_s(&tmBuf, &tSec);
-#else
-    gmtime_r(&tSec, &tmBuf);
-#endif
-    char buf[32];
-    strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%SZ", &tmBuf);
-    return buf;
+    return kv8util::FormatUtcCompact(tSec);
 }
 
 // Human-readable frequency string (Hz).
@@ -749,9 +741,13 @@ int main(int argc, char *argv[])
         cfg.sChannel = Kv8SanitizeChannel(cfg.sChannel);
 
     // Build Kv8Config
-    auto kCfg = kv8util::BuildKv8Config(
-        cfg.sBrokers, cfg.sSecurityProto, cfg.sSaslMechanism,
-        cfg.sSaslUser, cfg.sSaslPass);
+    auto kCfg = kv8util::BuildKv8Config({
+        cfg.sBrokers,
+        cfg.sSecurityProto,
+        cfg.sSaslMechanism,
+        cfg.sSaslUser,
+        cfg.sSaslPass,
+        {}});
 
     auto consumer = IKv8Consumer::Create(kCfg);
     if (!consumer)

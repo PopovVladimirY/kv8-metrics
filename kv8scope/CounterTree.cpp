@@ -1,4 +1,4 @@
-// kv8scope -- Kv8 Software Oscilloscope
+﻿// kv8scope -- Kv8 Software Oscilloscope
 // CounterTree.cpp -- Counter / feed tree panel implementation.
 
 #include "CounterTree.h"
@@ -20,6 +20,63 @@
 // ---------------------------------------------------------------------------
 // Formatting helpers
 // ---------------------------------------------------------------------------
+
+namespace {
+
+// ---------------------------------------------------------------------------
+// Counter-table column layout
+//
+// The table has two slightly different shapes depending on whether the source
+// session is live (Online) or replayed (Offline).  Online has an extra "E"
+// (Enable) checkbox column; Offline omits it.  The remaining columns appear
+// in the same order in both layouts.
+//
+// Centralising the layout in a single switch (instead of twelve scattered
+// "m_bOnline ? a : b" literals) keeps the column order and width-array sizing
+// in one place and removes the magic 7 / 8 / 9 column indices.
+// ---------------------------------------------------------------------------
+enum class Col
+{
+    Name,    // tree-indented counter / group name (column 0 in both layouts)
+    Enable,  // "E" checkbox (online only; -1 in offline layout)
+    Visible, // "V" checkbox
+    N,       // full-duration sample count
+    Nv,      // visible-window sample count
+    Vmin,    // visible-window stats
+    Vmax,
+    Vavg,
+    Vmed,
+    Fmin,    // full-duration stats
+    Fmax,
+    Favg
+};
+
+// Returns the table column index for a layout kind.  -1 means the column is
+// not present in the active layout (currently only Col::Enable in offline).
+constexpr int ColIdx(Col c, bool bOnline)
+{
+    switch (c)
+    {
+        case Col::Name:    return 0;
+        case Col::Enable:  return bOnline ?  1 : -1;
+        case Col::Visible: return bOnline ?  2 :  1;
+        case Col::N:       return bOnline ?  3 :  2;
+        case Col::Nv:      return bOnline ?  4 :  3;
+        case Col::Vmin:    return bOnline ?  5 :  4;
+        case Col::Vmax:    return bOnline ?  6 :  5;
+        case Col::Vavg:    return bOnline ?  7 :  6;
+        case Col::Vmed:    return bOnline ?  8 :  7;
+        case Col::Fmin:    return bOnline ?  9 :  8;
+        case Col::Fmax:    return bOnline ? 10 :  9;
+        case Col::Favg:    return bOnline ? 11 : 10;
+    }
+    return -1;
+}
+
+// Total visible columns, excluding the trailing "##pad" right-edge spacer.
+constexpr int ColCount(bool bOnline) { return bOnline ? 12 : 11; }
+
+} // namespace
 
 /// Format a sample count with K / M suffix into buf[bufSize].
 static void FormatCount(int64_t n, char* buf, int bufSize)
@@ -320,18 +377,8 @@ void CounterTree::Render(WaveformRenderer* pWaveform, StatsEngine* pStats)
 
     // Column index constants -- Name is column 0 (leftmost, gets tree indent).
     // E and V follow immediately with IndentDisable so checkboxes never shift.
-    const int iName = 0;
-    const int iE    = m_bOnline ?  1 : -1;
-    const int iV    = m_bOnline ?  2 :  1;
-    const int iN    = m_bOnline ?  3 :  2;
-    const int iNv   = m_bOnline ?  4 :  3;
-    const int iVmin = m_bOnline ?  5 :  4;
-    const int iVmax = m_bOnline ?  6 :  5;
-    const int iVavg = m_bOnline ?  7 :  6;
-    const int iVmed = m_bOnline ?  8 :  7;
-    const int iFmin = m_bOnline ?  9 :  8;
-    const int iFmax = m_bOnline ? 10 :  9;
-    const int iFavg = m_bOnline ? 11 : 10;
+    // Layout owned by the Col enum / ColIdx() helper at file scope.
+    auto idx = [bOn = m_bOnline](Col c) { return ColIdx(c, bOn); };
 
     ImGuiTableFlags flags =
         ImGuiTableFlags_BordersOuter   |
@@ -388,15 +435,15 @@ void CounterTree::Render(WaveformRenderer* pWaveform, StatsEngine* pStats)
     ImGui::TableSetupColumn("V",    ImGuiTableColumnFlags_WidthFixed  |
                                     ImGuiTableColumnFlags_NoResize    |
                                     ImGuiTableColumnFlags_IndentDisable,    fCheckW);
-    ImGui::TableSetupColumn("N",    ImGuiTableColumnFlags_WidthFixed, colW(iN,    fColCount));
-    ImGui::TableSetupColumn("Nv",   ImGuiTableColumnFlags_WidthFixed, colW(iNv,   fColCount));
-    ImGui::TableSetupColumn("Vmin", ImGuiTableColumnFlags_WidthFixed, colW(iVmin, fColStat));
-    ImGui::TableSetupColumn("Vmax", ImGuiTableColumnFlags_WidthFixed, colW(iVmax, fColStat));
-    ImGui::TableSetupColumn("Vavg", ImGuiTableColumnFlags_WidthFixed, colW(iVavg, fColStat));
-    ImGui::TableSetupColumn("Vmed", ImGuiTableColumnFlags_WidthFixed, colW(iVmed, fColStat));
-    ImGui::TableSetupColumn("Min",  ImGuiTableColumnFlags_WidthFixed, colW(iFmin, fColStat));
-    ImGui::TableSetupColumn("Max",  ImGuiTableColumnFlags_WidthFixed, colW(iFmax, fColStat));
-    ImGui::TableSetupColumn("Avg",  ImGuiTableColumnFlags_WidthFixed, colW(iFavg, fColStat));
+    ImGui::TableSetupColumn("N",    ImGuiTableColumnFlags_WidthFixed, colW(idx(Col::N),    fColCount));
+    ImGui::TableSetupColumn("Nv",   ImGuiTableColumnFlags_WidthFixed, colW(idx(Col::Nv),   fColCount));
+    ImGui::TableSetupColumn("Vmin", ImGuiTableColumnFlags_WidthFixed, colW(idx(Col::Vmin), fColStat));
+    ImGui::TableSetupColumn("Vmax", ImGuiTableColumnFlags_WidthFixed, colW(idx(Col::Vmax), fColStat));
+    ImGui::TableSetupColumn("Vavg", ImGuiTableColumnFlags_WidthFixed, colW(idx(Col::Vavg), fColStat));
+    ImGui::TableSetupColumn("Vmed", ImGuiTableColumnFlags_WidthFixed, colW(idx(Col::Vmed), fColStat));
+    ImGui::TableSetupColumn("Min",  ImGuiTableColumnFlags_WidthFixed, colW(idx(Col::Fmin), fColStat));
+    ImGui::TableSetupColumn("Max",  ImGuiTableColumnFlags_WidthFixed, colW(idx(Col::Fmax), fColStat));
+    ImGui::TableSetupColumn("Avg",  ImGuiTableColumnFlags_WidthFixed, colW(idx(Col::Favg), fColStat));
     ImGui::TableSetupColumn("##pad", ImGuiTableColumnFlags_WidthFixed |
                                      ImGuiTableColumnFlags_NoResize, 8.0f); // right-edge padding
 
@@ -429,9 +476,9 @@ void CounterTree::Render(WaveformRenderer* pWaveform, StatsEngine* pStats)
         ImGui::TableNextRow();
 
         // E column -- aggregate Enabled toggle (online only).
-        if (m_bOnline && iE >= 0)
+        if (m_bOnline && idx(Col::Enable) >= 0)
         {
-            ImGui::TableSetColumnIndex(iE);
+            ImGui::TableSetColumnIndex(idx(Col::Enable));
             // Show as checked only when ALL counters are enabled.
             // Any click drives the whole group to the new (toggled) state.
             bool bGroupE = (nEnabled == nTotal);
@@ -453,7 +500,7 @@ void CounterTree::Render(WaveformRenderer* pWaveform, StatsEngine* pStats)
         }
 
         // V column -- aggregate Visible toggle.
-        ImGui::TableSetColumnIndex(iV);
+        ImGui::TableSetColumnIndex(idx(Col::Visible));
         {
             // Show as checked only when ALL counters are visible.
             bool bGroupV = (nVisible == nTotal);
@@ -472,7 +519,7 @@ void CounterTree::Render(WaveformRenderer* pWaveform, StatsEngine* pStats)
         }
 
         // Name column -- group tree node (no per-group stats; stats are per-counter only).
-        ImGui::TableSetColumnIndex(iName);
+        ImGui::TableSetColumnIndex(idx(Col::Name));
         char szGrpLabel[256];
         std::snprintf(szGrpLabel, sizeof(szGrpLabel),
                       "%s  (%d)##G%d",
@@ -557,9 +604,9 @@ void CounterTree::Render(WaveformRenderer* pWaveform, StatsEngine* pStats)
             const float fAlpha = st.bVisible ? 1.0f : 0.45f;
 
             // E column (online only).
-            if (m_bOnline && iE >= 0)
+            if (m_bOnline && idx(Col::Enable) >= 0)
             {
-                ImGui::TableSetColumnIndex(iE);
+                ImGui::TableSetColumnIndex(idx(Col::Enable));
                 ImGui::PushStyleVar(ImGuiStyleVar_Alpha,
                                     ImGui::GetStyle().Alpha * fAlpha);
                 char szId[32];
@@ -573,7 +620,7 @@ void CounterTree::Render(WaveformRenderer* pWaveform, StatsEngine* pStats)
             }
 
             // V column.
-            ImGui::TableSetColumnIndex(iV);
+            ImGui::TableSetColumnIndex(idx(Col::Visible));
             {
                 char szId[32];
                 std::snprintf(szId, sizeof(szId), "##V%d_%d", g, ci);
@@ -583,7 +630,7 @@ void CounterTree::Render(WaveformRenderer* pWaveform, StatsEngine* pStats)
             }
 
             // Name column: 12x12 color swatch then counter name.
-            ImGui::TableSetColumnIndex(iName);
+            ImGui::TableSetColumnIndex(idx(Col::Name));
             {
                 ImGui::PushStyleVar(ImGuiStyleVar_Alpha,
                                     ImGui::GetStyle().Alpha * fAlpha);
@@ -764,15 +811,15 @@ void CounterTree::Render(WaveformRenderer* pWaveform, StatsEngine* pStats)
                     std::strcpy(szFavg, "--");
                 }
 
-                ImGui::TableSetColumnIndex(iN);    ImGui::Text("%s", szN);
-                ImGui::TableSetColumnIndex(iNv);   ImGui::Text("%s", szNv);
-                ImGui::TableSetColumnIndex(iVmin); ImGui::Text("%s", szVmin);
-                ImGui::TableSetColumnIndex(iVmax); ImGui::Text("%s", szVmax);
-                ImGui::TableSetColumnIndex(iVavg); ImGui::Text("%s", szVavg);
-                ImGui::TableSetColumnIndex(iVmed); ImGui::Text("%s", szVmed);
-                ImGui::TableSetColumnIndex(iFmin); ImGui::Text("%s", szFmin);
-                ImGui::TableSetColumnIndex(iFmax); ImGui::Text("%s", szFmax);
-                ImGui::TableSetColumnIndex(iFavg); ImGui::Text("%s", szFavg);
+                ImGui::TableSetColumnIndex(idx(Col::N));    ImGui::Text("%s", szN);
+                ImGui::TableSetColumnIndex(idx(Col::Nv));   ImGui::Text("%s", szNv);
+                ImGui::TableSetColumnIndex(idx(Col::Vmin)); ImGui::Text("%s", szVmin);
+                ImGui::TableSetColumnIndex(idx(Col::Vmax)); ImGui::Text("%s", szVmax);
+                ImGui::TableSetColumnIndex(idx(Col::Vavg)); ImGui::Text("%s", szVavg);
+                ImGui::TableSetColumnIndex(idx(Col::Vmed)); ImGui::Text("%s", szVmed);
+                ImGui::TableSetColumnIndex(idx(Col::Fmin)); ImGui::Text("%s", szFmin);
+                ImGui::TableSetColumnIndex(idx(Col::Fmax)); ImGui::Text("%s", szFmax);
+                ImGui::TableSetColumnIndex(idx(Col::Favg)); ImGui::Text("%s", szFavg);
 
                 ImGui::PopStyleVar();
             }
@@ -829,9 +876,9 @@ void CounterTree::Render(WaveformRenderer* pWaveform, StatsEngine* pStats)
                     ImGui::TableNextRow();
 
                     // E column -- aggregate Enabled toggle (online only).
-                    if (m_bOnline && iE >= 0)
+                    if (m_bOnline && idx(Col::Enable) >= 0)
                     {
-                        ImGui::TableSetColumnIndex(iE);
+                        ImGui::TableSetColumnIndex(idx(Col::Enable));
                         bool bSubE = (nDescEnabled == nDesc);
                         char szEId[512];
                         std::snprintf(szEId, sizeof(szEId), "##SFE%d_%s",
@@ -847,7 +894,7 @@ void CounterTree::Render(WaveformRenderer* pWaveform, StatsEngine* pStats)
                     }
 
                     // V column -- aggregate Visible toggle.
-                    ImGui::TableSetColumnIndex(iV);
+                    ImGui::TableSetColumnIndex(idx(Col::Visible));
                     {
                         bool bSubV = (nDescVisible == nDesc);
                         char szVId[512];
@@ -866,7 +913,7 @@ void CounterTree::Render(WaveformRenderer* pWaveform, StatsEngine* pStats)
                     }
 
                     // Name column -- collapsible sub-folder tree node.
-                    ImGui::TableSetColumnIndex(iName);
+                    ImGui::TableSetColumnIndex(idx(Col::Name));
                     char szSubId[512];
                     std::snprintf(szSubId, sizeof(szSubId), "%s##SF%d_%s",
                                   child.sSeg.c_str(), g, sChildPath.c_str());

@@ -451,9 +451,9 @@ int main(int argc, char *argv[])
     printf("========================================================\n\n");
 
     // -- Build Kv8Config and create consumer ---------------------------------
-    auto kCfg = kv8util::BuildKv8Config(
+    auto kCfg = kv8util::BuildKv8Config({
         cfg.sBrokers, cfg.sSecurityProto, cfg.sSaslMechanism,
-        cfg.sSaslUser, cfg.sSaslPass, cfg.sGroupID);
+        cfg.sSaslUser, cfg.sSaslPass, cfg.sGroupID});
 
     auto consumer = IKv8Consumer::Create(kCfg);
     if (!consumer)

@@ -81,7 +81,7 @@ dynamically, and renders live waveforms per counter.
 
 Architecture highlights:
 - `ConsumerThread` pulls decoded samples off Kafka.
-- `SpscRingBuffer<TelemetrySample>` (lock-free, cache-line-aligned head/tail)
+- `SpscDynamicRing<TelemetrySample>` (lock-free, cache-line-aligned head/tail)
   bridges the consumer thread to the render thread without mutexes.
 - `WaveformRenderer` draws scrolling waveforms via ImGui draw lists.
 - `LogStore` + `LogPanel` host a dockable trace-log viewer (Ctrl+L). Rows

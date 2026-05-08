@@ -109,7 +109,7 @@ set(KV8SCOPE_SOURCES
     SessionListPanel.cpp
     SessionManager.h
     SessionManager.cpp
-    SpscRingBuffer.h
+    SpscDynamicRing.h
     StatsEngine.h
     StatsEngine.cpp
     StatsPanel.h

@@ -21,7 +21,7 @@ macro(kv8zoom_test NAME SRC)
     add_test(NAME ${NAME} COMMAND ${NAME})
 endmacro()
 
-kv8zoom_test(TestSpscRingBuffer    TestSpscRingBuffer.cpp)
+kv8zoom_test(TestSpscFixedRing     TestSpscFixedRing.cpp)
 kv8zoom_test(TestDecimation        TestDecimationController.cpp)
 kv8zoom_test(TestPathSimplifier    TestPathSimplifier.cpp)
 kv8zoom_test(TestAttitudeFilter    TestAttitudeFilter.cpp)

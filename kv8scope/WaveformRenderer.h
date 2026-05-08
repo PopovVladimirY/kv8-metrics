@@ -2,7 +2,7 @@
 // WaveformRenderer.h -- ImPlot-based waveform chart rendering.
 //
 // Manages per-counter data buffers (append-only master arrays of
-// timestamps and values), drains new samples from SpscRingBuffer
+// timestamps and values), drains new samples from SpscDynamicRing
 // each frame, and draws live-updating waveforms via ImPlot.
 //
 // Supports auto-scroll for live sessions, colorblind-safe palette,
@@ -12,7 +12,7 @@
 #pragma once
 
 #include "AnnotationStore.h"
-#include "SpscRingBuffer.h"
+#include "SpscDynamicRing.h"
 #include "StatsEngine.h"
 
 #include "imgui.h"
@@ -67,10 +67,10 @@ public:
 
     // ---- Per-frame data flow --------------------------------------------
 
-    /// Drain new samples from a SpscRingBuffer into the master buffer.
+    /// Drain new samples from a SpscDynamicRing into the master buffer.
     /// Called once per (dwHash, wCounterID) per frame from ScopeWindow.
     void DrainRingBuffer(uint32_t dwHash, uint16_t wCounterID,
-                         SpscRingBuffer<TelemetrySample>* pRing);
+                         SpscDynamicRing<TelemetrySample>* pRing);
 
     // ---- Rendering ------------------------------------------------------
 

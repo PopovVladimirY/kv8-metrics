@@ -17,6 +17,7 @@ target_include_directories(kv8log_facade
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../libkv8/include>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../kv8util/include>
         $<INSTALL_INTERFACE:include>
 )
 

@@ -257,7 +257,7 @@ int main(int argc, char *argv[])
     std::string sLogTopic    = sPrefix + "._log";
     std::string sRegTopic    = sChannel + "._registry";
 
-    auto kCfg = kv8util::BuildKv8Config(sBrokers, sSecProto, sSaslMech, sUser, sPass);
+    auto kCfg = kv8util::BuildKv8Config({sBrokers, sSecProto, sSaslMech, sUser, sPass, {}});
     // Heartbeat starts automatically on connect; no manual StartHeartbeat needed.
     kCfg.sHeartbeatTopic      = sPrefix + ".hb";
     kCfg.nHeartbeatIntervalMs = 3000;

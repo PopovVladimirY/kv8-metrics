@@ -1,4 +1,4 @@
-////////////////////////////////////////////////////////////////////////////////
+﻿////////////////////////////////////////////////////////////////////////////////
 // kv8bench_log -- LOG hot-path throughput benchmark.
 //
 // Measures dispatch latency and throughput for KV8_LOGF_INFO from N producer
@@ -192,7 +192,7 @@ int main(int argc, char *argv[])
     setvbuf(stdout, nullptr, _IONBF, 0);
     TimerInit();
 
-    // ── Parse arguments ──────────────────────────────────────────────────────
+    // â”€â”€ Parse arguments â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     std::string sBrokers     = "localhost:19092";
     std::string sUser        = "kv8producer";
     std::string sPass        = "kv8secret";
@@ -266,24 +266,23 @@ int main(int argc, char *argv[])
     // Build payload string.
     std::string sPayload(nPayload, 'x');
 
-    // ── Pre-clean previous run's channel ─────────────────────────────────────
+    // â”€â”€ Pre-clean previous run's channel â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const std::string sChannel = DefaultChannelName();
     {
         try
         {
-            auto kCfg = BuildKv8Config(sBrokers, "sasl_plaintext", "PLAIN",
-                                       sUser, sPass, "");
+            auto kCfg = BuildKv8Config({sBrokers, "sasl_plaintext", "PLAIN", sUser, sPass, ""});
             auto cleaner = kv8::IKv8Consumer::Create(kCfg);
             cleaner->DeleteChannel(sChannel);
         }
         catch (...) {}
     }
 
-    // ── Configure kv8log (must precede first emission) ───────────────────────
+    // â”€â”€ Configure kv8log (must precede first emission) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     KV8_LOG_CONFIGURE(sBrokers.c_str(), sChannel.c_str(),
                       sUser.c_str(), sPass.c_str());
 
-    // ── Print banner ─────────────────────────────────────────────────────────
+    // â”€â”€ Print banner â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     std::printf("kv8bench_log -- LOG hot-path throughput benchmark\n");
     std::printf("  brokers : %s\n", sBrokers.c_str());
     std::printf("  channel : %s\n", sChannel.c_str());
@@ -295,7 +294,7 @@ int main(int argc, char *argv[])
         std::printf("  duration: %.3f s\n", dDurationSec);
     std::printf("  sample  : 1-in-%d for latency\n\n", nSampleRate);
 
-    // ── Launch threads ───────────────────────────────────────────────────────
+    // â”€â”€ Launch threads â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     ThreadFn fnTable[kMaxThreads] = {};
     ThreadFnTable<kMaxThreads>::Fill(fnTable);
 
@@ -325,7 +324,7 @@ int main(int argc, char *argv[])
                           std::cref(bStop));
     }
 
-    // ── Per-second progress rows ─────────────────────────────────────────────
+    // â”€â”€ Per-second progress rows â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     std::printf("  sec     calls/s        total_calls\n");
     uint64_t qwLastTotal = 0;
     int      nSecondsElapsed = 0;
@@ -364,11 +363,11 @@ int main(int argc, char *argv[])
 
     const double dElapsed = std::chrono::duration<double>(tEnd - tStart).count();
 
-    // ── Flush kv8log so producer queue is drained ───────────────────────────
+    // â”€â”€ Flush kv8log so producer queue is drained â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     std::printf("\n[BENCH] flushing kv8log...\n");
     KV8_TEL_FLUSH();
 
-    // ── Aggregate latency ────────────────────────────────────────────────────
+    // â”€â”€ Aggregate latency â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     std::vector<double> vAllLat;
     for (auto &v : vLatPerThread) vAllLat.insert(vAllLat.end(), v.begin(), v.end());
     Stats statLat = ComputeStats(vAllLat);
@@ -376,7 +375,7 @@ int main(int argc, char *argv[])
     const uint64_t qwTotal = qwTotalCalls.load();
     const double   dThru   = (dElapsed > 0.0) ? (qwTotal / dElapsed) : 0.0;
 
-    // ── Acceptance thresholds (per LOG_PHASES.md L6.1) ──────────────────────
+    // â”€â”€ Acceptance thresholds (per LOG_PHASES.md L6.1) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const double dP50Limit  = 200.0;
     const double dP99Limit  = 1000.0;
     const double dThruLimit = 1.0e6;
@@ -385,7 +384,7 @@ int main(int argc, char *argv[])
     const bool   bPassThru = dThru > dThruLimit;
     const bool   bAllPass  = bPassP50 && bPassP99 && bPassThru;
 
-    // ── Console summary ──────────────────────────────────────────────────────
+    // â”€â”€ Console summary â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     std::printf("\n=== Final summary ===\n");
     std::printf("Total calls:         %llu\n", (unsigned long long)qwTotal);
     std::printf("Duration (s):        %.3f\n", dElapsed);
@@ -408,7 +407,7 @@ int main(int argc, char *argv[])
                 bPassThru ? "PASS" : "FAIL",
                 dThru / 1.0e6, nThreads);
 
-    // ── Report file ──────────────────────────────────────────────────────────
+    // â”€â”€ Report file â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     if (FILE *f = std::fopen(sReport.c_str(), "w"))
     {
         std::fprintf(f, "kv8bench_log -- LOG hot-path throughput benchmark\n");
@@ -444,13 +443,12 @@ int main(int argc, char *argv[])
                      sReport.c_str());
     }
 
-    // ── Cleanup ──────────────────────────────────────────────────────────────
+    // â”€â”€ Cleanup â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     if (bCleanup)
     {
         try
         {
-            auto kCfg = BuildKv8Config(sBrokers, "sasl_plaintext", "PLAIN",
-                                       sUser, sPass, "");
+            auto kCfg = BuildKv8Config({sBrokers, "sasl_plaintext", "PLAIN", sUser, sPass, ""});
             auto cleaner = kv8::IKv8Consumer::Create(kCfg);
             cleaner->DeleteChannel(sChannel);
             std::printf("[BENCH] channel %s deleted\n", sChannel.c_str());

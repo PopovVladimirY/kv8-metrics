@@ -1,8 +1,8 @@
 ////////////////////////////////////////////////////////////////////////////////
-// kv8zoom/tests/TestSpscRingBuffer.cpp
+// kv8zoom/tests/TestSpscFixedRing.cpp
 ////////////////////////////////////////////////////////////////////////////////
 
-#include "SpscRingBuffer.h"
+#include "SpscFixedRing.h"
 
 #include <cassert>
 #include <cstdio>
@@ -14,7 +14,7 @@ using namespace kv8zoom;
 
 static void TestEmptyAndCapacity()
 {
-    SpscRingBuffer<int, 8> ring;
+    SpscFixedRing<int, 8> ring;
     assert(ring.empty());
     assert(ring.size_approx() == 0);
     assert(ring.capacity() == 7); // capacity = N-1 (one slot reserved for full detection)
@@ -22,7 +22,7 @@ static void TestEmptyAndCapacity()
 
 static void TestPushPop()
 {
-    SpscRingBuffer<int, 8> ring;
+    SpscFixedRing<int, 8> ring;
     for (int i = 0; i < 4; ++i) {
         bool ok = ring.push(i);
         assert(ok);
@@ -39,7 +39,7 @@ static void TestPushPop()
 
 static void TestFull()
 {
-    SpscRingBuffer<int, 4> ring; // capacity = 3
+    SpscFixedRing<int, 4> ring; // capacity = 3
     assert(ring.push(10));
     assert(ring.push(20));
     assert(ring.push(30));
@@ -55,7 +55,7 @@ static void TestFull()
 
 static void TestSizeApprox()
 {
-    SpscRingBuffer<int, 16> ring;
+    SpscFixedRing<int, 16> ring;
     for (int i = 0; i < 5; ++i) ring.push(i);
     assert(ring.size_approx() == 5);
     int v;
@@ -65,7 +65,7 @@ static void TestSizeApprox()
 
 static void TestWraparound()
 {
-    SpscRingBuffer<int, 8> ring; // capacity = 7
+    SpscFixedRing<int, 8> ring; // capacity = 7
     for (int i = 0; i < 7; ++i) ring.push(i);
     int v;
     for (int i = 0; i < 7; ++i) ring.pop(v);
@@ -77,7 +77,7 @@ static void TestWraparound()
 
 static void TestConcurrentProducerConsumer()
 {
-    SpscRingBuffer<int, 1024> ring;
+    SpscFixedRing<int, 1024> ring;
     const int N = 10000;
 
     std::thread producer([&]() {
@@ -107,6 +107,6 @@ int main()
     TestSizeApprox();
     TestWraparound();
     TestConcurrentProducerConsumer();
-    fprintf(stderr, "TestSpscRingBuffer: all pass\n");
+    fprintf(stderr, "TestSpscFixedRing: all pass\n");
     return 0;
 }

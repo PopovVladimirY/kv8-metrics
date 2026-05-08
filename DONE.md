@@ -168,7 +168,7 @@ All KV8_WORK_PLAN.md phases (P1 through P4) are implemented.
 |------|--------|
 | `ScopeWindow` -- per-session ImGui window, toolbar ([S]/[R]/[C] modes, play/pause/live) | DONE |
 | `ConsumerThread` -- background IKv8Consumer thread, per-counter ring buffer dispatch | DONE |
-| `SpscRingBuffer<TelemetrySample>` -- cache-line-aligned head/tail, lock-free SPSC | DONE |
+| `SpscDynamicRing<TelemetrySample>` -- cache-line-aligned head/tail, lock-free SPSC | DONE |
 | `TimeConverter` -- QPC/monotonic to wall-clock UTC via session anchor | DONE |
 | `WaveformRenderer` -- ImPlot-based strip charts, per-counter master buffers | DONE |
 | Simple / Range / Cyclogram visualization modes | DONE |

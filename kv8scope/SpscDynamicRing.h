@@ -1,11 +1,18 @@
 // kv8scope -- Kv8 Software Oscilloscope
-// SpscRingBuffer.h -- Lock-free Single-Producer / Single-Consumer ring buffer.
+// SpscDynamicRing.h -- Lock-free Single-Producer / Single-Consumer ring
+// with runtime (heap-allocated) capacity.
 //
 // Template class with power-of-two capacity and cache-line-aligned
 // head / tail indices to prevent false sharing.  The writer (consumer
 // thread) calls Push(); the reader (render thread) calls Pop() or
 // PopBatch().  No mutexes -- correctness relies on acquire/release
 // atomics.
+//
+// Companion fixed-capacity variant: kv8zoom/SpscFixedRing.h
+//   - Use SpscDynamicRing<T> when capacity is known only at runtime and
+//     storage must come from the heap (one ring per session/counter).
+//   - Use SpscFixedRing<T,N>  when capacity is known at compile time and
+//     in-class storage is desired (one ring per fixed channel).
 
 #pragma once
 
@@ -32,22 +39,23 @@ struct TelemetrySample
 };
 
 // ---------------------------------------------------------------------------
-// SpscRingBuffer<T>
+// SpscDynamicRing<T>
 // ---------------------------------------------------------------------------
 
-/// Lock-free SPSC ring buffer with power-of-two capacity.
+/// Lock-free SPSC ring buffer with runtime (heap-allocated) power-of-two
+/// capacity.
 ///
 /// Memory layout:
 ///   - m_head (writer index) and m_tail (reader index) are on separate
 ///     64-byte cache lines to avoid false sharing.
 ///   - The data array is 64-byte aligned for cache-friendly access.
 template<typename T>
-class SpscRingBuffer
+class SpscDynamicRing
 {
 public:
     /// @param requestedCapacity  Minimum number of slots.  Rounded up to
     ///                           the next power of two.
-    explicit SpscRingBuffer(uint64_t requestedCapacity)
+    explicit SpscDynamicRing(uint64_t requestedCapacity)
     {
         m_capacity = NextPow2(requestedCapacity);
         m_mask     = m_capacity - 1;
@@ -60,11 +68,11 @@ public:
         int rc  = posix_memalign(&p, 64, cb);
         m_pData = (rc == 0) ? static_cast<T*>(p) : nullptr;
 #endif
-        assert(m_pData && "SpscRingBuffer: aligned allocation failed");
+        assert(m_pData && "SpscDynamicRing: aligned allocation failed");
         std::memset(m_pData, 0, cb);
     }
 
-    ~SpscRingBuffer()
+    ~SpscDynamicRing()
     {
         if (m_pData)
         {
@@ -77,10 +85,10 @@ public:
     }
 
     // Non-copyable, non-movable.
-    SpscRingBuffer(const SpscRingBuffer&)            = delete;
-    SpscRingBuffer& operator=(const SpscRingBuffer&) = delete;
-    SpscRingBuffer(SpscRingBuffer&&)                 = delete;
-    SpscRingBuffer& operator=(SpscRingBuffer&&)      = delete;
+    SpscDynamicRing(const SpscDynamicRing&)            = delete;
+    SpscDynamicRing& operator=(const SpscDynamicRing&) = delete;
+    SpscDynamicRing(SpscDynamicRing&&)                 = delete;
+    SpscDynamicRing& operator=(SpscDynamicRing&&)      = delete;
 
     // ---- Writer (producer / consumer thread) ----------------------------
 

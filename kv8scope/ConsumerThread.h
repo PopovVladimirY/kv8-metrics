@@ -4,13 +4,13 @@
 // Owns an IKv8Consumer, subscribes to all data topics in the session,
 // decodes Kv8TelValue messages, converts QPC timestamps via
 // TimeConverter, and pushes TelemetrySample into per-counter
-// SpscRingBuffer instances.
+// SpscDynamicRing instances.
 //
 // The render thread drains the ring buffers each frame (P2.3).
 
 #pragma once
 
-#include "SpscRingBuffer.h"
+#include "SpscDynamicRing.h"
 #include "TimeConverter.h"
 
 #include <kv8/Kv8Types.h>
@@ -108,7 +108,7 @@ public:
 
     /// Get the ring buffer for a counter identified by (groupHash, counterID).
     /// Returns nullptr if the counter is not known.
-    SpscRingBuffer<TelemetrySample>* GetRingBuffer(uint32_t dwHash,
+    SpscDynamicRing<TelemetrySample>* GetRingBuffer(uint32_t dwHash,
                                                    uint16_t wCounterID);
 
     /// Enumerate all (dwHash, wCounterID) pairs that have ring buffers.
@@ -162,7 +162,7 @@ private:
 
     /// Per-counter ring buffers.  Key = MakeKey(dwHash, wCounterID).
     /// Written by the consumer thread (Push), read by the renderer (Pop).
-    std::map<uint64_t, std::unique_ptr<SpscRingBuffer<TelemetrySample>>>
+    std::map<uint64_t, std::unique_ptr<SpscDynamicRing<TelemetrySample>>>
         m_ringBuffers;
 
     // ---- Thread state ---------------------------------------------------

@@ -1,5 +1,6 @@
 ////////////////////////////////////////////////////////////////////////////////
-// kv8zoom/SpscRingBuffer.h -- lock-free single-producer / single-consumer ring.
+// kv8zoom/SpscFixedRing.h -- lock-free single-producer / single-consumer ring
+// with fixed (compile-time) capacity stored in-class.
 //
 // Constraints:
 //   - N must be a power of two.
@@ -7,6 +8,12 @@
 //   - pop()  called only from the consumer thread.
 //   - No mutexes.  Ordering is enforced with release/acquire atomics.
 //   - Cache-line aligned head and tail to prevent false sharing.
+//
+// Companion runtime-capacity variant: kv8scope/SpscDynamicRing.h
+//   - Use SpscFixedRing<T,N>  when capacity is known at compile time and
+//     in-class storage is desired (one ring per fixed channel).
+//   - Use SpscDynamicRing<T> when capacity is known only at runtime and
+//     storage must come from the heap (one ring per session/counter).
 ////////////////////////////////////////////////////////////////////////////////
 
 #pragma once
@@ -17,17 +24,17 @@
 namespace kv8zoom {
 
 template <typename T, size_t N>
-class SpscRingBuffer
+class SpscFixedRing
 {
-    static_assert((N & (N - 1)) == 0, "SpscRingBuffer: N must be a power of two");
-    static_assert(N >= 2,             "SpscRingBuffer: N must be at least 2");
+    static_assert((N & (N - 1)) == 0, "SpscFixedRing: N must be a power of two");
+    static_assert(N >= 2,             "SpscFixedRing: N must be at least 2");
 
 public:
-    SpscRingBuffer() = default;
+    SpscFixedRing() = default;
 
     // Not copyable or movable -- the buffer owns live atomic state.
-    SpscRingBuffer(const SpscRingBuffer&)            = delete;
-    SpscRingBuffer& operator=(const SpscRingBuffer&) = delete;
+    SpscFixedRing(const SpscFixedRing&)            = delete;
+    SpscFixedRing& operator=(const SpscFixedRing&) = delete;
 
     // Push one item.  Returns false when the buffer is full (item dropped).
     // Called from the producer thread only.

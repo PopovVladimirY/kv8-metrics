@@ -59,7 +59,7 @@ void ConsumerThread::Join()
 // Ring buffer access (main / render thread)
 // ---------------------------------------------------------------------------
 
-SpscRingBuffer<TelemetrySample>*
+SpscDynamicRing<TelemetrySample>*
 ConsumerThread::GetRingBuffer(uint32_t dwHash, uint16_t wCounterID)
 {
     auto it = m_ringBuffers.find(MakeKey(dwHash, wCounterID));
@@ -196,7 +196,7 @@ void ConsumerThread::InitRingBuffers()
             {
                 m_ringBuffers.emplace(
                     key,
-                    std::make_unique<SpscRingBuffer<TelemetrySample>>(
+                    std::make_unique<SpscDynamicRing<TelemetrySample>>(
                         kRingCapacity));
             }
 

@@ -179,7 +179,7 @@ bool WaveformRenderer::RegisterCounterIfNew(
 // ---------------------------------------------------------------------------
 
 void WaveformRenderer::DrainRingBuffer(uint32_t dwHash, uint16_t wCounterID,
-                                       SpscRingBuffer<TelemetrySample>* pRing)
+                                       SpscDynamicRing<TelemetrySample>* pRing)
 {
     if (!pRing)
         return;

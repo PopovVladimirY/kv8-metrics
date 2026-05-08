@@ -6,7 +6,7 @@
 
 #include "Config.h"
 #include "Frames.h"
-#include "SpscRingBuffer.h"
+#include "SpscFixedRing.h"
 
 #include <kv8/IKv8Consumer.h>
 #include <kv8/Kv8Types.h>
@@ -83,10 +83,10 @@ public:
     int64_t GetTopicLatestTimestampMs(const std::string& topic, int timeoutMs = 3000);
 
     // Ring buffer accessors (written by consumer thread, read by uWS thread).
-    SpscRingBuffer<NavFrame, kNavRingSize>& NavRing() noexcept { return m_navRing; }
-    SpscRingBuffer<AttFrame, kAttRingSize>& AttRing() noexcept { return m_attRing; }
-    SpscRingBuffer<MotFrame, kMotRingSize>& MotRing() noexcept { return m_motRing; }
-    SpscRingBuffer<WxFrame,  kWxRingSize>&  WxRing()  noexcept { return m_wxRing;  }
+    SpscFixedRing<NavFrame, kNavRingSize>& NavRing() noexcept { return m_navRing; }
+    SpscFixedRing<AttFrame, kAttRingSize>& AttRing() noexcept { return m_attRing; }
+    SpscFixedRing<MotFrame, kMotRingSize>& MotRing() noexcept { return m_motRing; }
+    SpscFixedRing<WxFrame,  kWxRingSize>&  WxRing()  noexcept { return m_wxRing;  }
 
 private:
     void OnMessage(std::string_view sTopic,
@@ -99,10 +99,10 @@ private:
     std::unique_ptr<kv8::IKv8Consumer> m_consumer;
     std::unordered_map<std::string, FeedType> m_topicToFeed;
 
-    SpscRingBuffer<NavFrame, kNavRingSize> m_navRing;
-    SpscRingBuffer<AttFrame, kAttRingSize> m_attRing;
-    SpscRingBuffer<MotFrame, kMotRingSize> m_motRing;
-    SpscRingBuffer<WxFrame,  kWxRingSize>  m_wxRing;
+    SpscFixedRing<NavFrame, kNavRingSize> m_navRing;
+    SpscFixedRing<AttFrame, kAttRingSize> m_attRing;
+    SpscFixedRing<MotFrame, kMotRingSize> m_motRing;
+    SpscFixedRing<WxFrame,  kWxRingSize>  m_wxRing;
 
     alignas(64) std::atomic<bool> m_stop{false};
 };

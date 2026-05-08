@@ -678,7 +678,7 @@ int main(int argc, char *argv[])
     }
 
     // -- Build Kafka config ---------------------------------------------------
-    auto kCfg = kv8util::BuildKv8Config(sBrokers, sSecProto, sSaslMech, sUser, sPass);
+    auto kCfg = kv8util::BuildKv8Config({sBrokers, sSecProto, sSaslMech, sUser, sPass, {}});
 
     // -- Dispatch to appropriate mode -----------------------------------------
     if (!sChannel.empty())

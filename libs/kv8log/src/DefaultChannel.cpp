@@ -8,46 +8,17 @@
 #include "kv8log/Channel.h"
 #include "kv8log/Runtime.h"
 
+#include <kv8util/Kv8Platform.h>
+
 #include <string>
 #include <cstdint>
 
-#ifdef _WIN32
-#  define WIN32_LEAN_AND_MEAN
-#  include <windows.h>
-#else
-#  include <unistd.h>
-#endif
-
 namespace kv8log {
 
-// ── Exe-name resolver (duplicated lightly from Runtime.cpp for independence).
-static std::string ResolveDefaultChannelName()
-{
-#ifdef _WIN32
-    wchar_t buf[512]{};
-    GetModuleFileNameW(nullptr, buf, 511);
-    char narrow[512]{};
-    WideCharToMultiByte(CP_UTF8, 0, buf, -1, narrow, 511, nullptr, nullptr);
-    std::string path(narrow);
-#elif defined(__linux__)
-    char buf[512]{};
-    ssize_t n = readlink("/proc/self/exe", buf, sizeof(buf) - 1);
-    std::string path = (n > 0) ? std::string(buf, (size_t)n) : "";
-#else
-    std::string path;
-#endif
-    auto slash = path.find_last_of("/\\");
-    if (slash != std::string::npos) path = path.substr(slash + 1);
-    auto dot = path.rfind('.');
-    if (dot != std::string::npos) path = path.substr(0, dot);
-    std::string exe = path.empty() ? "kv8app" : path;
-    return "kv8log/" + exe;
-}
-
-// ── Default channel name storage (static, persists for process lifetime).
+// Default channel name = "kv8log/<exe-basename>".  Resolved once on first use.
 static const std::string& DefaultChannelName()
 {
-    static std::string s_name = ResolveDefaultChannelName();
+    static std::string s_name = std::string("kv8log/") + kv8util::GetProcessExeName();
     return s_name;
 }
 

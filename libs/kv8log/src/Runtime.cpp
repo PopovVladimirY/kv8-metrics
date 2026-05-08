@@ -14,6 +14,7 @@
 #include "kv8log/Runtime.h"
 
 #include <kv8/Kv8Constants.h>
+#include <kv8util/Kv8Platform.h>
 
 #include <mutex>
 #include <string>
@@ -28,7 +29,6 @@
 #  include <shellapi.h>   // CommandLineToArgvW
 #else
 #  include <dlfcn.h>
-#  include <unistd.h>    // readlink
 #endif
 
 namespace kv8log {
@@ -64,30 +64,6 @@ State& G()
 }
 
 // ── Platform helpers ────────────────────────────────────────────────────
-
-static std::string GetExeName()
-{
-#ifdef _WIN32
-    wchar_t buf[512]{};
-    GetModuleFileNameW(nullptr, buf, 511);
-    // Convert wide to narrow (ASCII exe names only per project convention).
-    char narrow[512]{};
-    WideCharToMultiByte(CP_UTF8, 0, buf, -1, narrow, 511, nullptr, nullptr);
-    std::string path(narrow);
-#elif defined(__linux__)
-    char buf[512]{};
-    ssize_t n = readlink("/proc/self/exe", buf, sizeof(buf) - 1);
-    std::string path = (n > 0) ? std::string(buf, (size_t)n) : "";
-#else
-    std::string path;
-#endif
-    // Strip directory and extension.
-    auto slash = path.find_last_of("/\\");
-    if (slash != std::string::npos) path = path.substr(slash + 1);
-    auto dot = path.rfind('.');
-    if (dot != std::string::npos) path = path.substr(0, dot);
-    return path.empty() ? "kv8app" : path;
-}
 
 // Collect argv tokens from the OS without requiring main() to pass them.
 static std::vector<std::string> GetArgv()
@@ -157,7 +133,7 @@ static void ParseConfigFromArgvEnv(Config& cfg)
     if (const char* v = GetEnv("KV8_PASS"))    cfg.pass    = v;
     // Default channel from exe name.
     if (cfg.channel.empty())
-        cfg.channel = "kv8log/" + GetExeName();
+        cfg.channel = "kv8log/" + kv8util::GetProcessExeName();
 }
 
 // ── Shared library loading ──────────────────────────────────────────────
