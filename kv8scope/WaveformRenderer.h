@@ -330,7 +330,7 @@ public:
 private:
     static constexpr double kNaN        = std::numeric_limits<double>::quiet_NaN();
     static constexpr double kMaxLiveSpan = 15.0;  // maximum live window in seconds
-    static constexpr double kMinXSpan    = 1e-9;   // minimum X zoom span (1 ns) – safe because
+    static constexpr double kMinXSpan    = 1e-9;   // minimum X zoom span (1 ns) -- safe because
                                                    // internal timestamps are session-relative
 
     // ---- Multi-panel constants ------------------------------------------

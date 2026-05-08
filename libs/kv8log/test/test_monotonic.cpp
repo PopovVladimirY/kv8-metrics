@@ -25,7 +25,7 @@
 #include <chrono>
 #include <thread>
 
-// ── Platform monotonic clock (mirrors MonoNs() in kv8log_impl.cpp) ──────────
+// -- Platform monotonic clock (mirrors MonoNs() in kv8log_impl.cpp) ----------
 #ifdef _WIN32
 #  define WIN32_LEAN_AND_MEAN
 #  include <windows.h>

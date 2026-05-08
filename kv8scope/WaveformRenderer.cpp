@@ -1777,8 +1777,8 @@ bool WaveformRenderer::Render(const ImVec2& size, bool bAutoScroll,
         {
             // Plain scroll (non-live): zoom X around cursor position.
             //
-            // Bug fix: deep zoom-in can push m_dXLimitMax − m_dXLimitMin to zero
-            // because Unix-epoch timestamps (~1.7 × 10⁹ s) exhaust double precision
+            // Bug fix: deep zoom-in can push m_dXLimitMax - m_dXLimitMin to zero
+            // because Unix-epoch timestamps (~1.7 x 10^9 s) exhaust double precision
             // at roughly 380 ns resolution.  Clamping the effective range to
             // kMinXSpan ensures zoom-out can always escape that collapsed state.
             double dXRange = m_dXLimitMax - m_dXLimitMin;

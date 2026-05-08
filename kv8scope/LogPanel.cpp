@@ -20,7 +20,7 @@
 #  include <commdlg.h>
 #endif
 
-// ── Severity colour palette ─────────────────────────────────────────────────
+// -- Severity colour palette -------------------------------------------------
 //
 // Colours match the design proposal (Phase L4.4): WARN amber, ERROR
 // orange-red, FATAL magenta.  DEBUG and INFO are kept low-contrast so they
@@ -191,7 +191,7 @@ void LogPanel::Render(WaveformRenderer* pWaveform)
     if (!m_bVisible)  return;
     if (!m_pStore)    return;
 
-    // ── Cross-panel sync: marker click on the waveform ────────────────────
+    // -- Cross-panel sync: marker click on the waveform --------------------
     // Promotes that entry to the panel's selection so the row is
     // highlighted and scrolled into view on this frame.
     if (pWaveform)
@@ -261,7 +261,7 @@ void LogPanel::Render(WaveformRenderer* pWaveform)
         return;
     }
 
-    // ── Toolbar ────────────────────────────────────────────────────────────
+    // -- Toolbar ------------------------------------------------------------
     // Severity toggle buttons; clicking flips the corresponding bit in the
     // LogStore's level mask.  Buttons are coloured by their level so the
     // active selection is visually obvious at a glance.
@@ -325,7 +325,7 @@ void LogPanel::Render(WaveformRenderer* pWaveform)
 
     ImGui::Separator();
 
-    // ── Visible X range from the waveform (for in-window highlight) ────────
+    // -- Visible X range from the waveform (for in-window highlight) --------
     // GetVisibleXLimits() is session-relative seconds, but LogStore::Entry
     // timestamps are absolute Unix-epoch ns.  Add the session origin
     // before converting -- without this, every entry falls outside the
@@ -355,7 +355,7 @@ void LogPanel::Render(WaveformRenderer* pWaveform)
         m_qwLastResolvedTsNs = 0;
     }
 
-    // ── Sync mode: when the waveform window moves, snap the table's
+    // -- Sync mode: when the waveform window moves, snap the table's
     // selection to the newest entry inside the new window.  This keeps
     // both views aligned without requiring an explicit click.
     if (m_bSync && pWaveform && tsMaxNs != m_qwLastWindowMaxNs)
@@ -381,7 +381,7 @@ void LogPanel::Render(WaveformRenderer* pWaveform)
         }
     }
 
-    // ── Table ──────────────────────────────────────────────────────────────
+    // -- Table --------------------------------------------------------------
     constexpr ImGuiTableFlags kTableFlags =
         ImGuiTableFlags_Borders   | ImGuiTableFlags_RowBg    |
         ImGuiTableFlags_Resizable | ImGuiTableFlags_ScrollY  |
@@ -522,7 +522,7 @@ void LogPanel::Render(WaveformRenderer* pWaveform)
         ImGui::EndTable();
     }
 
-    // ── Export-to-CSV dialog ──────────────────────────────────────────────
+    // -- Export-to-CSV dialog ----------------------------------------------
     // Modal popup driven by the toolbar's [Export...] button.  Three knobs:
     //   1. Range -- All entries vs. only those inside the telemetry plot's
     //      visible X window (uses pWaveform->GetVisibleXLimits()).

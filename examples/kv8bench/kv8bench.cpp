@@ -196,7 +196,7 @@ int main(int argc, char *argv[])
     setvbuf(stdout, nullptr, _IONBF, 0);
     TimerInit();
 
-    // ── Parse arguments ──────────────────────────────────────────────────────
+    // -- Parse arguments ------------------------------------------------------
     std::string sBrokers      = "localhost:19092";
     std::string sTopic;
     std::string sSecProto     = "sasl_plaintext";
@@ -317,7 +317,7 @@ int main(int argc, char *argv[])
     fprintf(stdout, "[BENCH] Topic   : %s\n", sTopic.c_str());
     fprintf(stdout, "[BENCH] Report  : %s\n", sReport.c_str());
 
-    // ── Build Kv8Config ──────────────────────────────────────────────────────
+    // -- Build Kv8Config ------------------------------------------------------
     Kv8Config kCfg;
     kCfg.sBrokers       = sBrokers;
     kCfg.sSecurityProto = sSecProto;
@@ -327,7 +327,7 @@ int main(int argc, char *argv[])
 
     if (!bUdt)
     {
-        // ── Create topic explicitly before subscribing ────────────────────────────
+        // -- Create topic explicitly before subscribing ----------------------------
         // Doing this upfront (a) lets us control the partition count, which
         // multiplies consumer fetch throughput directly: librdkafka opens one
         // independent fetch pipeline per partition; (b) avoids the metadata-refresh
@@ -362,12 +362,12 @@ int main(int argc, char *argv[])
         std::this_thread::sleep_for(std::chrono::milliseconds(300));
     }
 
-    // ── UDT benchmark mode ─────────────────────────────────────────────────────
+    // -- UDT benchmark mode -----------------------------------------------------
     // Self-contained execution path: runs the full UDT benchmark and returns.
     // Skipped entirely when --udt is not specified.
     if (bUdt)
     {
-        // ── Topic name derivation ──────────────────────────────────────────────
+        // -- Topic name derivation ----------------------------------------------
         // Channel "bench" is fixed; session ID reuses the auto-generated sTopic.
         // Registry topic: bench._registry
         // Group topic:    bench.<sessionID>.d.<Fnv32(channel)hex8>
@@ -394,7 +394,7 @@ int main(int argc, char *argv[])
         fprintf(stdout, "[UDT] Data topic: %s\n", sUdtTopic.c_str());
         fprintf(stdout, "[UDT] Rate      : %" PRId64 " samples/s\n", nUdtRate);
 
-        // ── Create producer ────────────────────────────────────────────────────
+        // -- Create producer ----------------------------------------------------
         auto udtProducer = IKv8Producer::Create(kCfg);
         if (!udtProducer)
         {
@@ -402,7 +402,7 @@ int main(int argc, char *argv[])
             return 1;
         }
 
-        // ── Create UDT data topic ──────────────────────────────────────────────
+        // -- Create UDT data topic ----------------------------------------------
         {
             fprintf(stdout, "[UDT] Creating UDT topic '%s' with %d partition(s)...\n",
                     sUdtTopic.c_str(), nPartitions);
@@ -432,7 +432,7 @@ int main(int argc, char *argv[])
             fprintf(stdout, "[UDT] Topic ready.\n");
         }
 
-        // ── Write registry records so kv8scope can discover this session ───────
+        // -- Write registry records so kv8scope can discover this session -------
         {
             // Timer anchors for the GROUP record (same approach as kv8log_open).
             uint64_t qwFreq = 0, qwTimer = 0;
@@ -477,7 +477,7 @@ int main(int argc, char *argv[])
             fprintf(stdout, "[UDT] Registry records written to '%s'.\n", sRegTopic.c_str());
         }
 
-        // ── Shared state ───────────────────────────────────────────────────────
+        // -- Shared state -------------------------------------------------------
         std::atomic<int64_t> gUdtSent{0};
         std::atomic<int64_t> gUdtRecv{0};
         std::atomic<bool>    gUdtStop{false};
@@ -492,7 +492,7 @@ int main(int argc, char *argv[])
 
         std::vector<ProgressRow> vUdtProgress;
 
-        // ── Consumer thread ────────────────────────────────────────────────────
+        // -- Consumer thread ----------------------------------------------------
         std::thread udtConsumer([&]()
         {
             auto cons = IKv8Consumer::Create(kCfg);
@@ -575,7 +575,7 @@ int main(int argc, char *argv[])
         // Give the consumer time to subscribe before the warmup message.
         std::this_thread::sleep_for(std::chrono::milliseconds(300));
 
-        // ── Warmup: wait for consumer partition assignment ─────────────────────
+        // -- Warmup: wait for consumer partition assignment ---------------------
         {
             fprintf(stdout, "[UDT] Warming up consumer (waiting for partition assign)...\n");
             const uint16_t kWarmSize =
@@ -613,7 +613,7 @@ int main(int argc, char *argv[])
             fprintf(stdout, "[UDT] Consumer ready.\n");
         }
 
-        // ── Producer loop ──────────────────────────────────────────────────────
+        // -- Producer loop ------------------------------------------------------
         fprintf(stdout, "[UDT] Producing");
         if (bCountMode)
             fprintf(stdout, " %" PRIu64 " UDT samples", nCountArg);
@@ -799,7 +799,7 @@ int main(int argc, char *argv[])
         fprintf(stdout, "[UDT] Done. sent=%" PRId64 "  recv=%" PRId64 "\n",
                 nUdtTotalSent, nUdtTotalRecv);
 
-        // ── Post-session Kafka verification pass ───────────────────────────────
+        // -- Post-session Kafka verification pass -------------------------------
         // An independent consumer re-reads the UDT topic from offset 0 to:
         //   (a) count how many benchmark samples reached the broker,
         //   (b) verify all expected schema fields are present (payload size check),
@@ -977,7 +977,7 @@ int main(int argc, char *argv[])
             }
         }
 
-        // ── Timestamp regularity analysis (from verify pass) ──────────────────
+        // -- Timestamp regularity analysis (from verify pass) ------------------
         std::vector<double> vUdtIntervalMs;  // inter-sample intervals (ms)
         int64_t nUdtNonMono   = 0;
         int64_t nUdtAnomalies = 0;
@@ -1037,7 +1037,7 @@ int main(int argc, char *argv[])
             fprintf(stdout, "[UDT] %s\n", std::string(72, '=').c_str());
         }
 
-        // ── Stats + report ─────────────────────────────────────────────────────
+        // -- Stats + report -----------------------------------------------------
         const size_t nSmp  = nUdtSamples.load();
         const double dTput = (dUdtTotalMs > 0.0)
                            ? (double)nUdtTotalSent / (dUdtTotalMs / 1000.0)
@@ -1051,7 +1051,7 @@ int main(int argc, char *argv[])
             ? (double)(nUdtLost > 0 ? nUdtLost : 0) / (double)nUdtTotalSent * 100.0
             : 0.0;
 
-        // ── Explicit stdout summary ───────────────────────────────────────────
+        // -- Explicit stdout summary -------------------------------------------
         fprintf(stdout, "\n[UDT] %s\n", std::string(72, '=').c_str());
         fprintf(stdout, "[UDT]   kv8bench UDT -- Summary\n");
         fprintf(stdout, "[UDT] %s\n", std::string(72, '-').c_str());
@@ -1147,7 +1147,7 @@ int main(int argc, char *argv[])
             }
             fprintf(stdout, "[UDT] %s\n", std::string(72, '=').c_str());
 
-            // ── Report file ────────────────────────────────────────────────────
+            // -- Report file ----------------------------------------------------
             FILE *fRep = fopen(sReport.c_str(), "w");
             if (!fRep) fRep = stdout;
 
@@ -1330,7 +1330,7 @@ int main(int argc, char *argv[])
             fprintf(stdout, "[UDT] Report written to: %s\n", sReport.c_str());
         }
 
-        // ── Optional cleanup ───────────────────────────────────────────────────
+        // -- Optional cleanup ---------------------------------------------------
         if (bCleanup)
         {
             fprintf(stdout, "[UDT] Cleaning up topics...\n");
@@ -1351,7 +1351,7 @@ int main(int argc, char *argv[])
         return 0;
     } // end if (bUdt)
 
-    // ── Shared state between producer (main) and consumer (thread) ───────────
+    // -- Shared state between producer (main) and consumer (thread) -----------
     std::atomic<int64_t>  gSent{0};         // total messages enqueued
     std::atomic<int64_t>  gRecv{0};         // total messages received by consumer
     std::atomic<bool>     gProduceDone{false}; // producer finished + flushed
@@ -1391,7 +1391,7 @@ int main(int argc, char *argv[])
 
     std::vector<ProgressRow> vProgress;   // 1-s snapshots (main thread)
 
-    // ── Start consumer thread ────────────────────────────────────────────────
+    // -- Start consumer thread ------------------------------------------------
     // Uses Subscribe/Poll so it runs concurrently with the producer.
     // The rebalance callback seeks partition 0 to OFFSET_BEGINNING on first
     // assignment, so no messages are missed even if the topic is created after
@@ -1445,7 +1445,7 @@ int main(int argc, char *argv[])
                 {
                     ++nLocalRecv;
 
-                    // ── Sequence tracking (every message, not just sampled) ──
+                    // -- Sequence tracking (every message, not just sampled) --
                     if (cbPayload >= sizeof(BenchMsg))
                     {
                         uint64_t seq;
@@ -1497,7 +1497,7 @@ int main(int argc, char *argv[])
             }
         }
 
-        // ── Final drain: consume any messages already in librdkafka's internal
+        // -- Final drain: consume any messages already in librdkafka's internal
         // fetch queue.  When gConsumerStop fires, messages that have been
         // fetched from the broker but not yet delivered to the application sit
         // in the internal consumer queue.  A few more may still be in-flight
@@ -1558,7 +1558,7 @@ int main(int argc, char *argv[])
     // even registers its subscription).
     std::this_thread::sleep_for(std::chrono::milliseconds(300));
 
-    // ── Create producer ──────────────────────────────────────────────────────
+    // -- Create producer ------------------------------------------------------
     auto producer = IKv8Producer::Create(kCfg);
     if (!producer)
     {
@@ -1568,7 +1568,7 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    // ── Warmup: wait for consumer partition assignment ────────────────────────
+    // -- Warmup: wait for consumer partition assignment ------------------------
     // The consumer must complete the full JoinGroup/SyncGroup protocol and get
     // its partition assignment before the benchmark timer starts.  Otherwise
     // the first 3-4 seconds show recv=0 and the throughput numbers are skewed.
@@ -1613,7 +1613,7 @@ int main(int argc, char *argv[])
         fprintf(stdout, "[BENCH] Consumer ready.\n");
     }
 
-    // ── Phase 1: Produce messages ─────────────────────────────────────────────
+    // -- Phase 1: Produce messages ---------------------------------------------
     fprintf(stdout, "[BENCH] Producing");
     if (bCountMode) fprintf(stdout, " %" PRIu64 " messages", nCountArg);
     else            fprintf(stdout, " for %.1f s", dDurationSec);
@@ -1627,7 +1627,7 @@ int main(int argc, char *argv[])
     const auto tProduceDeadline = tProduceStart
         + std::chrono::milliseconds((int64_t)(dDurationSec * 1000.0));
 
-    // ── Tempo rate-limiter state ──────────────────────────────────────────────
+    // -- Tempo rate-limiter state ----------------------------------------------
     // Simple token-bucket: at the start of every 1-ms window we grant up to
     // (nTempoMps / 1000) tokens.  Once exhausted, the producer spin-sleeps
     // until the next window opens.  When nTempoMps==0 the limiter is bypassed.
@@ -1653,7 +1653,7 @@ int main(int argc, char *argv[])
             if (std::chrono::steady_clock::now() >= tProduceDeadline) break;
         }
 
-        // ── Tempo rate limiter ────────────────────────────────────────────────
+        // -- Tempo rate limiter ------------------------------------------------
         // When nTempoMps > 0, throttle the producer to the requested msg/s.
         // Tokens are replenished every 1 ms.  When the window is exhausted the
         // producer yields until the next millisecond boundary.
@@ -1744,7 +1744,7 @@ int main(int argc, char *argv[])
                     "  dr-failures=%" PRId64 "\n", nDrOk, nDrFail);
     fprintf(stdout, "[BENCH] Waiting for consumer to drain...\n");
 
-    // ── Wait for consumer to catch up ────────────────────────────────────────
+    // -- Wait for consumer to catch up ----------------------------------------
     // The producer has flushed -- all messages are now stored in the Kafka
     // broker.  The real-time consumer may still lag behind, though: at high
     // throughput, the consumer's fetch pipeline can be several seconds behind
@@ -1829,7 +1829,7 @@ int main(int argc, char *argv[])
     fprintf(stdout, "[BENCH] Consumer done. Received %" PRId64 " / %" PRId64 "\n",
             nTotalRecv, nTotalSent);
 
-    // ── Sequence continuity analysis ─────────────────────────────────────────
+    // -- Sequence continuity analysis -----------------------------------------
     {
         const int64_t nExpected = nTotalSent; // seq 0..nTotalSent-1
         int64_t nMissing  = 0;
@@ -1868,7 +1868,7 @@ int main(int argc, char *argv[])
             fprintf(stdout, "[BENCH]   All sequences accounted for -- no loss.\n");
     }
 
-    // ── Verification consumer pass (independent read from offset 0) ─────────
+    // -- Verification consumer pass (independent read from offset 0) ---------
     // After the benchmark, create a SECOND consumer that reads the entire topic
     // from the beginning and independently verifies that every BenchMsg.nSeq
     // from 0..nTotalSent-1 is present exactly once.  This catches messages the
@@ -2102,13 +2102,13 @@ int main(int argc, char *argv[])
     std::vector<double> vBrokerToConsMs(aBrokerToConsMs.get(), aBrokerToConsMs.get() + nSamples);
     std::vector<double> vE2eMs         (aE2eMs.get(),          aE2eMs.get()          + nSamples);
 
-    // ── Compute statistics ───────────────────────────────────────────────────
+    // -- Compute statistics ---------------------------------------------------
     Stats sDispatch = ComputeStats(vDispatchNs);
     Stats sProdBrkr = ComputeStats(vProdToBrokerMs);
     Stats sBrkrCons = ComputeStats(vBrokerToConsMs);
     Stats sE2e      = ComputeStats(vE2eMs);
 
-    // ── Write report ─────────────────────────────────────────────────────────
+    // -- Write report ---------------------------------------------------------
     FILE *fReport = fopen(sReport.c_str(), "w");
     if (!fReport)
     {
@@ -2295,7 +2295,7 @@ int main(int argc, char *argv[])
 
     if (fReport != stdout) fclose(fReport);
 
-    // ── Print summary to stdout ───────────────────────────────────────────────
+    // -- Print summary to stdout -----------------------------------------------
     fprintf(stdout,
         "\n[BENCH] ---------- Summary ----------\n"
         "[BENCH] Dispatch  p50 = %7.1f ns    p99 = %7.1f ns\n"
@@ -2334,7 +2334,7 @@ int main(int argc, char *argv[])
     }
     fprintf(stdout, "[BENCH] Report written to: %s\n", sReport.c_str());
 
-    // ── Optional cleanup ──────────────────────────────────────────────────────
+    // -- Optional cleanup ------------------------------------------------------
     if (bCleanup)
     {
         fprintf(stdout, "[BENCH] Cleaning up topic '%s'...\n", sTopic.c_str());

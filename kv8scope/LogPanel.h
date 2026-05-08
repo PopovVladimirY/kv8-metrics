@@ -88,7 +88,7 @@ private:
     // to the newest in-window entry whenever the X range changes.
     uint64_t m_qwLastWindowMaxNs    = 0;
 
-    // ── Export-to-CSV dialog state ────────────────────────────────────────
+    // -- Export-to-CSV dialog state ----------------------------------------
     bool m_bShowExportDialog        = false;
     int  m_iExportRange             = 0;     // 0 = all, 1 = visible window
     bool m_bExportApplyFilter       = true;  // honour level mask + text filter

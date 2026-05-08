@@ -20,9 +20,9 @@
 #  include <intrin.h>   // _mm_pause
 #endif
 
-// ── Tight wait (copy of the helper used in main.cpp) ─────────────────────────
-// Sleeps to within 200 µs of the deadline then spin-loops precisely.
-// For intervals <= 200 µs the entire wait is a spin-loop.
+// -- Tight wait (copy of the helper used in main.cpp) -------------------------
+// Sleeps to within 200 uss of the deadline then spin-loops precisely.
+// For intervals <= 200 uss the entire wait is a spin-loop.
 namespace {
 
 static void tight_wait(std::chrono::steady_clock::time_point deadline)
@@ -45,7 +45,7 @@ static void tight_wait(std::chrono::steady_clock::time_point deadline)
 
 } // anonymous namespace
 
-// ── Thread: Environment/WeatherStation @ 1 Hz ───────────────────────────────
+// -- Thread: Environment/WeatherStation @ 1 Hz -------------------------------
 // Produces slow-moving sinusoidal values mimicking real sensor trends.
 // All fields fit in a flat 28-byte packed struct.
 void RunWeatherStation(const std::atomic<bool>& stop)

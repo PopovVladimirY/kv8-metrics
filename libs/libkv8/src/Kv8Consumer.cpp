@@ -203,7 +203,7 @@ static void ParseRegistryRecord(const void                         *pPayload,
 
     if (sTopic.empty()) return;
 
-    // ── Derive session prefix from the topic name ──────────────────────────
+    // -- Derive session prefix from the topic name --------------------------
     // Log topic  : <channel>.<sessionID>._log         -> prefix before "._log"
     // Data topic : <channel>.<sessionID>.d.XXXXXXXX   -> prefix before ".d."
     // UDT topic  : <channel>.<sessionID>.u.XXXXXXXX.Y -> prefix before ".u."
@@ -350,10 +350,10 @@ public:
     void DeleteChannel(const std::string &sChannel) override;
 
 private:
-    // ── Create the main streaming consumer (subscribe-mode) ──────────────────
+    // -- Create the main streaming consumer (subscribe-mode) ------------------
     bool InitStreaming();
 
-    // ── Rebalance callback (static -- receives 'this' via opaque) ────────────
+    // -- Rebalance callback (static -- receives 'this' via opaque) ------------
     static void RebalanceCb(rd_kafka_t                      *rk,
                             rd_kafka_resp_err_t               err,
                             rd_kafka_topic_partition_list_t  *parts,
@@ -377,7 +377,7 @@ private:
     std::unordered_set<uint64_t> m_setStarted;
 };
 
-// ── Constructor / destructor ─────────────────────────────────────────────────
+// -- Constructor / destructor -------------------------------------------------
 
 Kv8ConsumerImpl::Kv8ConsumerImpl(const Kv8Config &cfg) : m_cfg(cfg) {}
 
@@ -395,7 +395,7 @@ Kv8ConsumerImpl::~Kv8ConsumerImpl()
     }
 }
 
-// ── Lazy init of streaming consumer ─────────────────────────────────────────
+// -- Lazy init of streaming consumer -----------------------------------------
 
 bool Kv8ConsumerImpl::InitStreaming()
 {
@@ -486,7 +486,7 @@ bool Kv8ConsumerImpl::InitStreaming()
     return true;
 }
 
-// ── Rebalance callback ───────────────────────────────────────────────────────
+// -- Rebalance callback -------------------------------------------------------
 
 void Kv8ConsumerImpl::RebalanceCb(rd_kafka_t                      *rk,
                                    rd_kafka_resp_err_t               err,
@@ -504,7 +504,7 @@ void Kv8ConsumerImpl::RebalanceCb(rd_kafka_t                      *rk,
         std::lock_guard<std::mutex> lk(self->m_mtxStarted);
         for (int i = 0; i < parts->cnt; i++)
         {
-            // FNV-1a hash of topic name XOR partition index — zero heap allocation.
+            // FNV-1a hash of topic name XOR partition index -- zero heap allocation.
             const char *pTopic = parts->elems[i].topic ? parts->elems[i].topic : "";
             uint64_t h = 14695981039346656037ULL;
             for (const char *p = pTopic; *p; ++p)
@@ -547,7 +547,7 @@ void Kv8ConsumerImpl::RebalanceCb(rd_kafka_t                      *rk,
     }
 }
 
-// ── Subscribe ────────────────────────────────────────────────────────────────
+// -- Subscribe ----------------------------------------------------------------
 
 void Kv8ConsumerImpl::Subscribe(const std::string &sTopic)
 {
@@ -575,7 +575,7 @@ void Kv8ConsumerImpl::Subscribe(const std::string &sTopic)
         fprintf(stderr, "[KV8] resubscribe: %s\n", rd_kafka_err2str(e));
 }
 
-// ── Internal: dispatch one librdkafka message through the callback ───────────
+// -- Internal: dispatch one librdkafka message through the callback -----------
 // Returns true if a data message was dispatched, false on timeout / EOF / err.
 static bool DispatchOne(
     rd_kafka_message_t *pMsg,
@@ -608,7 +608,7 @@ static bool DispatchOne(
     return true;
 }
 
-// ── Poll ─────────────────────────────────────────────────────────────────────
+// -- Poll ---------------------------------------------------------------------
 
 void Kv8ConsumerImpl::Poll(
     int timeoutMs,
@@ -618,7 +618,7 @@ void Kv8ConsumerImpl::Poll(
     DispatchOne(rd_kafka_consumer_poll(m_rk, timeoutMs), onMessage);
 }
 
-// ── PollBatch ─────────────────────────────────────────────────────────────────
+// -- PollBatch -----------------------------------------------------------------
 
 int Kv8ConsumerImpl::PollBatch(
     int maxMessages,
@@ -664,7 +664,7 @@ int Kv8ConsumerImpl::PollBatch(
     return nProcessed;
 }
 
-// ── ConsumeTopicFromBeginning ─────────────────────────────────────────────────
+// -- ConsumeTopicFromBeginning -------------------------------------------------
 
 // CR-12: Query the actual partition count for a topic so we can assign all
 // partitions rather than hard-coding partition 0.  Falls back to 1 on error.
@@ -775,7 +775,7 @@ void Kv8ConsumerImpl::ConsumeTopicFromBeginning(
     SafeConsumerDestroy(rk);
 }
 
-// ── ListChannels ─────────────────────────────────────────────────────────────
+// -- ListChannels -------------------------------------------------------------
 
 std::vector<std::string>
 Kv8ConsumerImpl::ListChannels(int timeoutMs)
@@ -874,7 +874,7 @@ Kv8ConsumerImpl::ListChannels(int timeoutMs)
     return result;
 }
 
-// ── DiscoverSessions ─────────────────────────────────────────────────────────
+// -- DiscoverSessions ---------------------------------------------------------
 
 std::map<std::string, SessionMeta>
 Kv8ConsumerImpl::DiscoverSessions(const std::string &sChannel)
@@ -971,7 +971,7 @@ Kv8ConsumerImpl::DiscoverSessions(const std::string &sChannel)
 
     SafeConsumerDestroy(rk);
 
-    // ── Synthesize virtual scalar counters from UDT feed schemas ──────────────
+    // -- Synthesize virtual scalar counters from UDT feed schemas --------------
     //
     // For each UDT feed (CounterMeta with bIsUdtFeed==true), parse the JSON schema
     // and append one virtual CounterMeta per leaf field into the same
@@ -1127,7 +1127,7 @@ Kv8ConsumerImpl::DiscoverSessions(const std::string &sChannel)
     return sessions;
 }
 
-// ── ReadLatestRecord ──────────────────────────────────────────────────────────
+// -- ReadLatestRecord ----------------------------------------------------------
 
 bool Kv8ConsumerImpl::ReadLatestRecord(
     const std::string &sTopic,
@@ -1242,7 +1242,7 @@ int64_t Kv8ConsumerImpl::GetTopicLatestTimestampMs(
     return tsResult;
 }
 
-// ── AssignAtTimestampMs ───────────────────────────────────────────────────────
+// -- AssignAtTimestampMs -------------------------------------------------------
 
 void Kv8ConsumerImpl::AssignAtTimestampMs(
     const std::vector<std::string> &topics,
@@ -1305,7 +1305,7 @@ void Kv8ConsumerImpl::AssignAtTimestampMs(
     }
 }
 
-// ── GetTopicMessageCounts ─────────────────────────────────────────────────────
+// -- GetTopicMessageCounts -----------------------------------------------------
 
 std::map<std::string, int64_t>
 Kv8ConsumerImpl::GetTopicMessageCounts(const std::vector<std::string> &topics,
@@ -1383,7 +1383,7 @@ Kv8ConsumerImpl::GetTopicMessageCounts(const std::vector<std::string> &topics,
     return result;
 }
 
-// ── CreateTopic ───────────────────────────────────────────────────────────────
+// -- CreateTopic ---------------------------------------------------------------
 
 bool Kv8ConsumerImpl::CreateTopic(const std::string &sTopic,
                                    int                numPartitions,
@@ -1456,7 +1456,7 @@ bool Kv8ConsumerImpl::CreateTopic(const std::string &sTopic,
     return bOk;
 }
 
-// ── DeleteSessionTopics ───────────────────────────────────────────────────────
+// -- DeleteSessionTopics -------------------------------------------------------
 
 void Kv8ConsumerImpl::DeleteSessionTopics(const SessionMeta &sm)
 {
@@ -1535,7 +1535,7 @@ void Kv8ConsumerImpl::DeleteSessionTopics(const SessionMeta &sm)
     rd_kafka_destroy(rk);
 }
 
-// ── MarkSessionDeleted ────────────────────────────────────────────────────────
+// -- MarkSessionDeleted --------------------------------------------------------
 
 // CR-11: Delivery-report state for the tombstone record.
 // Used so we can confirm the tombstone actually reached the broker,
@@ -1627,7 +1627,7 @@ void Kv8ConsumerImpl::MarkSessionDeleted(const std::string &sChannel,
                 sm.sSessionPrefix.c_str(), sRegTopic.c_str());
 }
 
-// ── DeleteChannel ─────────────────────────────────────────────────────────────
+// -- DeleteChannel -------------------------------------------------------------
 
 void Kv8ConsumerImpl::DeleteChannel(const std::string &sChannel)
 {

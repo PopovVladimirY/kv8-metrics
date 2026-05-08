@@ -1,5 +1,28 @@
 # Kv8 Quick Start Guide
 
+Kv8 is a C++ telemetry and structured logging toolchain built on Apache Kafka.
+Instrument your application with a single header; get live waveform visualization,
+searchable trace logs, and persistent replay -- with no measurable overhead on
+the hot path.
+
+**For developers**: add `#define KV8_LOG_ENABLE` and two macros to any C++17
+codebase. Scalar counters (`KV8_TEL_ADD`) and severity-tagged trace events
+(`KV8_LOG_INFO`, `KV8_LOGF_WARN`, ...) are published to Kafka at production
+throughput (>2M calls/s). The shared runtime is loaded lazily; no link-time
+dependency is added. Everything compiles out to zero instructions when
+`KV8_LOG_ENABLE` is absent.
+
+**For R&D managers**: kv8scope is a real-time software oscilloscope that
+renders every instrumented metric as a scrolling waveform, overlays the trace
+log in a dockable panel tinted by severity (Debug / Info / Warning / Error /
+Fatal), and correlates log events to waveform timestamps with a click. Sessions
+are recorded to Kafka and can be replayed or analyzed offline at any time.
+No proprietary agents, no cloud dependency -- the entire stack runs on a single
+Docker container in the lab or on the test vehicle.
+
+![kv8scope](images/kv8scope.png)
+
+
 Build the project, start a local Kafka broker, produce telemetry,
 consume and verify it with the Kv8 tools.
 

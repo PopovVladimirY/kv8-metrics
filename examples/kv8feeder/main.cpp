@@ -44,7 +44,7 @@
 #  include <intrin.h>   // _mm_pause
 #endif
 
-// ── Stop flag ────────────────────────────────────────────────────────────────
+// -- Stop flag ----------------------------------------------------------------
 static std::atomic<bool> g_stop{false};
 
 #ifdef _WIN32
@@ -53,9 +53,9 @@ static BOOL WINAPI CtrlHandler(DWORD) { g_stop.store(true); return TRUE; }
 static void on_signal(int) { g_stop.store(true, std::memory_order_relaxed); }
 #endif
 
-// ── Precision wait ───────────────────────────────────────────────────────────
-// Sleeps to within 200 µs of the deadline then spin-loops precisely.
-// For intervals <= 200 µs the entire wait is a spin-loop.
+// -- Precision wait -----------------------------------------------------------
+// Sleeps to within 200 uss of the deadline then spin-loops precisely.
+// For intervals <= 200 uss the entire wait is a spin-loop.
 // This eliminates the ~1 ms OS timer quantisation that causes bursting at
 // high sample rates (Wald @ 10 kHz, Phases @ 100 kHz).
 static void tight_wait(std::chrono::steady_clock::time_point deadline)
@@ -76,7 +76,7 @@ static void tight_wait(std::chrono::steady_clock::time_point deadline)
     }
 }
 
-// ── Thread: Numbers/Counter ──────────────────────────────────────────────────
+// -- Thread: Numbers/Counter --------------------------------------------------
 // Uniform emission at the configured Hz rate.
 // Waits first, then records -- the KV8_TEL_ADD timestamp is taken at the
 // correct nominal time rather than at an arbitrary pre-sleep moment.
@@ -96,7 +96,7 @@ static void run_counter_feed(int hz, const std::atomic<bool>& stop)
     }
 }
 
-// ── Thread: Numbers/Wald ────────────────────────────────────────────────────
+// -- Thread: Numbers/Wald ----------------------------------------------------
 // Uniform emission at the configured Hz rate (spin-loop at 10 kHz default).
 static void run_wald_feed(int hz, const std::atomic<bool>& stop)
 {
@@ -114,7 +114,7 @@ static void run_wald_feed(int hz, const std::atomic<bool>& stop)
     }
 }
 
-// ── Thread: Scope/Phases ────────────────────────────────────────────────────
+// -- Thread: Scope/Phases ----------------------------------------------------
 // Each sample is emitted after a randomly varying wait drawn from a truncated
 // exponential distribution with mean = nominal_ns, range [nominal/10, nominal*10].
 //
@@ -157,7 +157,7 @@ static void run_phases_feed(int hz, const std::atomic<bool>& stop)
     }
 }
 
-// ── Thread: log emitter ─────────────────────────────────────────────────────
+// -- Thread: log emitter -----------------------------------------------------
 // Fires log records at every severity level on different periods so the
 // kv8scope LogPanel and timeline markers can be exercised end-to-end.
 // Periods are deliberately co-prime-ish so the rows interleave nicely.
@@ -207,7 +207,7 @@ static void run_log_emitter(const std::atomic<bool>& stop)
     }
 }
 
-// ── main ────────────────────────────────────────────────────────────────────
+// -- main --------------------------------------------------------------------
 int main(int argc, char** argv)
 {
     int  hz_counter = 100;

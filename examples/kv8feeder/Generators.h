@@ -13,7 +13,7 @@
 #include <random>
 #include <cstdint>
 
-// ── WrappingCounter ─────────────────────────────────────────────────────────
+// -- WrappingCounter ---------------------------------------------------------
 // Increments by 1 each call, wrapping from max back to 0.
 // Used for "Numbers/Counter" -- the rolling value lets consumers verify that
 // no samples are dropped.
@@ -36,7 +36,7 @@ private:
     double m_value;
 };
 
-// ── GaussWalk ───────────────────────────────────────────────────────────────
+// -- GaussWalk ---------------------------------------------------------------
 // Random walk with Gaussian steps clamped (reflected) to [min, max].
 class GaussWalk
 {
@@ -64,7 +64,7 @@ private:
     std::normal_distribution<double>      m_dist;
 };
 
-// ── PhaseCyclogram ──────────────────────────────────────────────────────────
+// -- PhaseCyclogram ----------------------------------------------------------
 // Holds a constant level for a random number of ticks, then jumps to a new
 // random level.  The caller decides what one "tick" means in wall-clock time.
 //

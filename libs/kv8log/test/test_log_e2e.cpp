@@ -71,7 +71,7 @@ int main(int argc, char** argv)
     if (!BrokerAvailable(a.sBrokers, a.sUser, a.sPass))
         return 0;  // SKIP
 
-    // ── Pre-clean: drop any leftover channel from a prior run ──────────────
+    // -- Pre-clean: drop any leftover channel from a prior run --------------
     {
         auto kCfg = kv8util::BuildKv8Config({
             a.sBrokers, "sasl_plaintext", "PLAIN", a.sUser, a.sPass, ""});
@@ -79,7 +79,7 @@ int main(int argc, char** argv)
         try { cleaner->DeleteChannel(a.sChannel); } catch (...) {}
     }
 
-    // ── Producer side ──────────────────────────────────────────────────────
+    // -- Producer side ------------------------------------------------------
     // KV8_LOG_CONFIGURE sets brokers/user/pass; the channel name is taken
     // from the executable name by the kv8log runtime (kv8log/<exe>).
     KV8_LOG_CONFIGURE(a.sBrokers.c_str(), a.sChannel.c_str(),
@@ -96,7 +96,7 @@ int main(int argc, char** argv)
 
     KV8_TEL_FLUSH();
 
-    // ── Consumer side ──────────────────────────────────────────────────────
+    // -- Consumer side ------------------------------------------------------
     auto kCfg = kv8util::BuildKv8Config({
         a.sBrokers, "sasl_plaintext", "PLAIN", a.sUser, a.sPass, ""});
     auto consumer = kv8::IKv8Consumer::Create(kCfg);
@@ -161,7 +161,7 @@ int main(int argc, char** argv)
 
     fprintf(stdout, "[INFO] decoded %zu log record(s)\n", vDecoded.size());
 
-    // ── Verifications ──────────────────────────────────────────────────────
+    // -- Verifications ------------------------------------------------------
     EXPECT(vDecoded.size() == 5);
 
     // The records may arrive in any order at the broker (single-thread emit
@@ -198,7 +198,7 @@ int main(int argc, char** argv)
     // adjacent source lines emitted above).
     EXPECT(setHashes.size() == 5);
 
-    // ── Cleanup ────────────────────────────────────────────────────────────
+    // -- Cleanup ------------------------------------------------------------
     // Best-effort delete of the per-session topics + the channel registry.
     try { consumer->DeleteSessionTopics(sm); } catch (...) {}
     try { consumer->DeleteChannel(a.sChannel); } catch (...) {}

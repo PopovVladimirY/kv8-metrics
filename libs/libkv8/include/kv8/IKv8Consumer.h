@@ -6,7 +6,7 @@
 // completely decoupled from the underlying transport library.
 //
 // Typical usage patterns
-// ──────────────────────
+// ----------------------
 // 1. kv8cli -- continuous channel monitor:
 //
 //      auto c = IKv8Consumer::Create(cfg);
@@ -59,7 +59,7 @@ class IKv8Consumer
 public:
     virtual ~IKv8Consumer() = default;
 
-    // ── Channel discovery ──────────────────────────────────────────────────────
+    // -- Channel discovery ------------------------------------------------------
 
     /// Scan all Kafka topics on the broker and return channel prefixes whose
     /// registry topic name starts with "kv8." (case-insensitive).
@@ -73,7 +73,7 @@ public:
     /// @return           Sorted list of unique channel prefixes found.
     virtual std::vector<std::string> ListChannels(int timeoutMs = 5000) = 0;
 
-    // ── Session discovery ──────────────────────────────────────────────────────
+    // -- Session discovery ------------------------------------------------------
 
     /// Scan the channel-level registry topic (<sChannel>._registry) from offset 0
     /// to the first PARTITION_EOF and return all sessions discovered.
@@ -86,7 +86,7 @@ public:
     virtual std::map<std::string, SessionMeta>
         DiscoverSessions(const std::string &sChannel) = 0;
 
-    // ── Streaming subscription ─────────────────────────────────────────────────
+    // -- Streaming subscription -------------------------------------------------
 
     /// Add @p sTopic to the active consumer-group subscription list.
     /// Idempotent: calling with the same topic multiple times is safe.
@@ -138,7 +138,7 @@ public:
                                  size_t              cbPayload,
                                  int64_t             tsKafkaMs)> &onMessage) = 0;
 
-    // ── Point-in-time topic reads ──────────────────────────────────────────────
+    // -- Point-in-time topic reads ----------------------------------------------
 
     /// Read all messages from @p sTopic starting from offset BEGINNING, up to
     /// the first PARTITION_EOF or @p hardTimeoutMs milliseconds elapsed.
@@ -158,7 +158,7 @@ public:
                                  size_t      cbPayload,
                                  int64_t     tsKafkaMs)> &onMessage) = 0;
 
-    // ── Point-in-time tail reads ───────────────────────────────────────────────
+    // -- Point-in-time tail reads -----------------------------------------------
 
     /// Read the single newest message from @p sTopic and invoke @p onMessage.
     ///
@@ -194,7 +194,7 @@ public:
         const std::string &sTopic,
         int timeoutMs = 2000) = 0;
 
-    // ── Timestamp-based direct assignment ────────────────────────────────────
+    // -- Timestamp-based direct assignment ------------------------------------
 
     /// Position the streaming consumer at the partition offsets that correspond
     /// to the messages with Kafka broker timestamps >= @p tsMs.
@@ -219,7 +219,7 @@ public:
                                      int64_t tsMs,
                                      int     timeoutMs = 3000) = 0;
 
-    // ── Topic statistics ───────────────────────────────────────────────────────
+    // -- Topic statistics -------------------------------------------------------
 
     /// Query the approximate message count for each topic in @p topics.
     ///
@@ -237,7 +237,7 @@ public:
         GetTopicMessageCounts(const std::vector<std::string> &topics,
                               int timeoutMs = 5000) = 0;
 
-    // ── Session deletion ───────────────────────────────────────────────────────
+    // -- Session deletion -------------------------------------------------------
 
     /// Delete all Kafka topics that belong to @p sm (data topics + _log + _ctl)
     /// using the Kafka Admin API.  Requires the broker ACL to allow topic deletion.
@@ -277,7 +277,7 @@ public:
                              int                replicationFactor = 1,
                              int                timeoutMs         = 8000) = 0;
 
-    // ── Factory ────────────────────────────────────────────────────────────────
+    // -- Factory ----------------------------------------------------------------
 
     /// Create and return a new consumer.
     /// Returns nullptr only on a fatal Kafka configuration error (very rare).

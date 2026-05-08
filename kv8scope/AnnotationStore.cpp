@@ -1,4 +1,4 @@
-﻿// kv8scope -- Kv8 Software Oscilloscope
+// kv8scope -- Kv8 Software Oscilloscope
 // AnnotationStore.cpp -- Annotation store with Kafka persistence.
 //
 // Kafka format (Section 14.2):

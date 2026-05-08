@@ -44,7 +44,7 @@ private:
     bool m_bOpen        = false;
     bool m_bJustOpened   = false;  // triggers ImGui::OpenPopup once
 
-    // ── Edit buffers (local copies while the dialog is open) ──
+    // -- Edit buffers (local copies while the dialog is open) --
     char   m_aBrokers[512]   = {};
     int    m_iSecProto       = 0;   // index into kSecurityProtocols
     int    m_iSaslMech       = 0;   // index into kSaslMechanisms
@@ -52,12 +52,12 @@ private:
     char   m_aPassword[128]  = {};
     int    m_iPollMs         = 5000;
 
-    // ── Test Connection state ──
+    // -- Test Connection state --
     enum class TestState { Idle, Running, Success, Failed };
     TestState   m_eTestState  = TestState::Idle;
     std::string m_sTestResult;
 
-    // ── Combo item arrays ──
+    // -- Combo item arrays --
     static constexpr const char* kSecurityProtocols[] = {
         "plaintext",
         "sasl_plaintext",

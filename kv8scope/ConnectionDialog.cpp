@@ -105,7 +105,7 @@ void ConnectionDialog::Render()
                                 ImGuiWindowFlags_AlwaysAutoResize))
         return;
 
-    // ── Input fields ─────────────────────────────────────────────────
+    // -- Input fields -------------------------------------------------
     const float fLabelW = 140.0f;
 
     ImGui::AlignTextToFramePadding();
@@ -149,7 +149,7 @@ void ConnectionDialog::Render()
     if (m_iPollMs < 500)
         m_iPollMs = 500;
 
-    // ── Test Connection ──────────────────────────────────────────────
+    // -- Test Connection ----------------------------------------------
     ImGui::Spacing();
     ImGui::Separator();
     ImGui::Spacing();
@@ -213,7 +213,7 @@ void ConnectionDialog::Render()
         break;
     }
 
-    // ── OK / Cancel ──────────────────────────────────────────────────
+    // -- OK / Cancel --------------------------------------------------
     ImGui::Spacing();
     ImGui::Separator();
     ImGui::Spacing();

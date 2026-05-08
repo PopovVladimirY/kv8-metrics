@@ -64,7 +64,7 @@
 
 using namespace kv8;
 
-// ── FNV-32 ─────────────────────────────────────────────────────────────────
+// -- FNV-32 -----------------------------------------------------------------
 static uint32_t Fnv32(const std::string& s)
 {
     uint32_t h = 2166136261u;
@@ -72,7 +72,7 @@ static uint32_t Fnv32(const std::string& s)
     return h;
 }
 
-// ── ExtractSchemaName ────────────────────────────────────────────────────────
+// -- ExtractSchemaName --------------------------------------------------------
 // Extracts the value of "name":"..." from a schema JSON string.
 // Returns empty string if the field is absent or malformed.
 static std::string ExtractSchemaName(const char* schema_json)
@@ -90,7 +90,7 @@ static std::string ExtractSchemaName(const char* schema_json)
     return std::string(p, static_cast<size_t>(end - p));
 }
 
-// ── ParseCtlMsg ─────────────────────────────────────────────────────────────
+// -- ParseCtlMsg -------------------------------------------------------------
 // Parse a ._ctl JSON message: {"v":1,"cmd":"ctr_state","wid":N,"enabled":BOOL,...}
 // Returns true on success and sets outWid / outEnabled.
 static bool ParseCtlMsg(const char* p, size_t len,
@@ -122,7 +122,7 @@ static bool ParseCtlMsg(const char* p, size_t len,
     return true;
 }
 
-// ── Extension header ────────────────────────────────────────────────────────
+// -- Extension header --------------------------------------------------------
 static inline uint32_t MakeExtHeader(uint32_t size)
 {
     // type=2 (TEL_V2), subtype=2 (VALUE).
@@ -130,7 +130,7 @@ static inline uint32_t MakeExtHeader(uint32_t size)
     return 2u | (2u << 5) | (size << 10);
 }
 
-// ── Platform time primitives ────────────────────────────────────────────────
+// -- Platform time primitives ------------------------------------------------
 static uint64_t MonoNs()
 {
 #ifdef _WIN32
@@ -186,7 +186,7 @@ static void GetFiletime(uint32_t& hi, uint32_t& lo)
 #endif
 }
 
-// ── Thread ID and CPU index (call-site capture for trace log) ──────────────
+// -- Thread ID and CPU index (call-site capture for trace log) --------------
 static inline uint32_t LogThreadId()
 {
 #ifdef _WIN32
@@ -208,7 +208,7 @@ static inline uint16_t LogCpuId()
 #endif
 }
 
-// ── Basename of a __FILE__ literal (slow path: registration only) ──────────
+// -- Basename of a __FILE__ literal (slow path: registration only) ----------
 static inline void TrimToBasename(const char*& p, uint16_t& len)
 {
     if (!p || len == 0) return;
@@ -233,7 +233,7 @@ static AnchorPair CaptureAnchors()
     return ap;
 }
 
-// ── Registry helper ─────────────────────────────────────────────────────────
+// -- Registry helper ---------------------------------------------------------
 static void WriteRegistryRecord(IKv8Producer* p, const std::string& regTopic,
     uint32_t dwHash, uint16_t wCounterID, uint16_t wFlags,
     double dbMin, double dbMax,
@@ -265,7 +265,7 @@ static void WriteRegistryRecord(IKv8Producer* p, const std::string& regTopic,
     p->Produce(regTopic, buf.data(), buf.size(), nullptr, 0);
 }
 
-// ── Per-counter slot ────────────────────────────────────────────────────────
+// -- Per-counter slot --------------------------------------------------------
 struct CounterSlot
 {
     std::string  name;
@@ -295,7 +295,7 @@ struct CounterSlot
     CounterSlot& operator=(const CounterSlot&) = delete;
 };
 
-// ── Session handle ──────────────────────────────────────────────────────────
+// -- Session handle ----------------------------------------------------------
 struct Kv8LogSession
 {
     std::unique_ptr<IKv8Producer> producer;
@@ -399,7 +399,7 @@ struct Kv8LogSession
     }
 };
 
-// ── RunCtlConsumerThread ────────────────────────────────────────────────────
+// -- RunCtlConsumerThread ----------------------------------------------------
 // Listens on the ._ctl topic and updates per-counter enabled flags when
 // kv8scope (or another tool) sends a ctr_state command.
 static void RunCtlConsumerThread(Kv8LogSession* s)
@@ -438,7 +438,7 @@ static void RunCtlConsumerThread(Kv8LogSession* s)
     pCons->Stop();
 }
 
-// ── kv8log_open ─────────────────────────────────────────────────────────────
+// -- kv8log_open -------------------------------------------------------------
 KV8LOG_API
 void* kv8log_open(const char* brokers, const char* channel,
                   const char* user, const char* pass)
@@ -533,7 +533,7 @@ void* kv8log_open(const char* brokers, const char* channel,
     return s;
 }
 
-// ── kv8log_close ───────────────────────────────────────────────────────────
+// -- kv8log_close -----------------------------------------------------------
 KV8LOG_API
 void kv8log_close(void* h)
 {
@@ -562,7 +562,7 @@ void kv8log_close(void* h)
     delete s;
 }
 
-// ── kv8log_set_counter_enabled ─────────────────────────────────────────────
+// -- kv8log_set_counter_enabled ---------------------------------------------
 KV8LOG_API
 void kv8log_set_counter_enabled(void* h, uint16_t id, int bEnabled)
 {
@@ -587,7 +587,7 @@ void kv8log_set_counter_enabled(void* h, uint16_t id, int bEnabled)
                               nullptr, 0);
 }
 
-// ── kv8log_register_counter ────────────────────────────────────────────────
+// -- kv8log_register_counter ------------------------------------------------
 KV8LOG_API
 int kv8log_register_counter(void* h, const char* name,
                              double mn, double mx, uint16_t* out_id)
@@ -648,7 +648,7 @@ int kv8log_register_counter(void* h, const char* name,
     return 0;
 }
 
-// ── kv8log_add ─────────────────────────────────────────────────────────────
+// -- kv8log_add -------------------------------------------------------------
 KV8LOG_API
 void kv8log_add(void* h, uint16_t id, double value)
 {
@@ -673,7 +673,7 @@ void kv8log_add(void* h, uint16_t id, double value)
     s->producer->ProduceToTopic(slot.rkt, &pkt, sizeof(pkt), &keyBE, sizeof(keyBE));
 }
 
-// ── kv8log_add_ts ──────────────────────────────────────────────────────────
+// -- kv8log_add_ts ----------------------------------------------------------
 KV8LOG_API
 void kv8log_add_ts(void* h, uint16_t id, double value, uint64_t ts_ns)
 {
@@ -699,7 +699,7 @@ void kv8log_add_ts(void* h, uint16_t id, double value, uint64_t ts_ns)
     s->producer->ProduceToTopic(slot.rkt, &pkt, sizeof(pkt), &keyBE, sizeof(keyBE));
 }
 
-// ── kv8log_flush ───────────────────────────────────────────────────────────
+// -- kv8log_flush -----------------------------------------------------------
 KV8LOG_API
 void kv8log_flush(void* h, int timeout_ms)
 {
@@ -708,7 +708,7 @@ void kv8log_flush(void* h, int timeout_ms)
     s->producer->Flush(timeout_ms);
 }
 
-// ── kv8log_monotonic_to_ns ─────────────────────────────────────────────────
+// -- kv8log_monotonic_to_ns -------------------------------------------------
 KV8LOG_API
 uint64_t kv8log_monotonic_to_ns(void* h, uint64_t mono_ns)
 {
@@ -719,7 +719,7 @@ uint64_t kv8log_monotonic_to_ns(void* h, uint64_t mono_ns)
     return s->wall_anchor_ns + (mono_ns - s->mono_anchor_ns);
 }
 
-// ── kv8log_register_udt_feed ───────────────────────────────────────────────
+// -- kv8log_register_udt_feed -----------------------------------------------
 //
 // Registers a UDT feed.  Two registry records are written:
 //   1. KV8_CID_SCHEMA  -- carries the JSON schema (idempotent per hash).
@@ -786,7 +786,7 @@ int kv8log_register_udt_feed(void* h, const char* display_name,
     return 0;
 }
 
-// ── kv8log_register_udt_schema ────────────────────────────────────────────
+// -- kv8log_register_udt_schema --------------------------------------------
 //
 // Registers a bare schema record (KV8_CID_SCHEMA) without creating a feed.
 // Used to pre-register embedded sub-schemas before calling register_udt_feed
@@ -809,7 +809,7 @@ int kv8log_register_udt_schema(void* h, const char* schema_json)
     return 0;
 }
 
-// ── kv8log_add_udt ─────────────────────────────────────────────────────────
+// -- kv8log_add_udt ---------------------------------------------------------
 //
 // Hot path: entirely lock-free.  Builds the 16-byte Kv8UDTSample header and
 // appends packed_data on the stack, then hands the buffer to ProduceToTopic.
@@ -849,7 +849,7 @@ void kv8log_add_udt(void* h, uint16_t feed_id,
     s->producer->ProduceToTopic(slot.rkt, buf, msg_size, &keyBE, sizeof(keyBE));
 }
 
-// ── kv8log_add_udt_ts ──────────────────────────────────────────────────────
+// -- kv8log_add_udt_ts ------------------------------------------------------
 //
 // As kv8log_add_udt but accepts a caller-supplied Unix-epoch timestamp in ns
 // (same contract as kv8log_add_ts for scalar counters).
@@ -890,7 +890,7 @@ void kv8log_add_udt_ts(void* h, uint16_t feed_id,
     s->producer->ProduceToTopic(slot.rkt, buf, msg_size, &keyBE, sizeof(keyBE));
 }
 
-// ── kv8log_register_log_site (Phase L2) ────────────────────────────────────
+// -- kv8log_register_log_site (Phase L2) ------------------------------------
 //
 // Slow path -- called at most once per call site per process run.  Computes
 // the FNV-32 site hash from (basename, line, function), de-duplicates against
@@ -960,7 +960,7 @@ uint32_t kv8log_register_log_site(void* h,
     return dwHash;
 }
 
-// ── kv8log_log (Phase L2) ──────────────────────────────────────────────────
+// -- kv8log_log (Phase L2) --------------------------------------------------
 //
 // Hot path -- one stack-allocated buffer holds the 28-byte Kv8LogRecord
 // header plus the payload (text or packed args).  No heap allocation, no

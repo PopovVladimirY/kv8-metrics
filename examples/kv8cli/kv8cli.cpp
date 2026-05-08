@@ -1,5 +1,5 @@
 ////////////////////////////////////////////////////////////////////////////////
-// kv8cli â€” Kafka consumer for Kv8 telemetry channels                      //
+// kv8cli -- Kafka consumer for Kv8 telemetry channels                      //
 //                                                                            //
 // Connects to a Kafka broker, reads the _registry topic for a given channel  //
 // prefix, discovers all data topics (d.<hash>), subscribes to them, and logs  //
@@ -116,7 +116,7 @@ static void PrintUsage(const char *pExe)
         "  --pass <password>          SASL password [kv8secret]\n"
         "  --group <group-id>         Consumer group ID [auto]\n"
         "  --from-beginning           Replay all stored messages (offset=earliest).\n"
-        "                             Default: start from NOW (offset=latest) â€” only\n"
+        "                             Default: start from NOW (offset=latest) -- only\n"
         "                             messages produced after the consumer connects are\n"
         "                             delivered, keeping the consumer aligned with the\n"
         "                             current producer session and avoiding replaying\n"
@@ -158,7 +158,7 @@ static bool ParseArgs(int argc, char *argv[], Config &o_cfg)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// â”€â”€ Process registry message â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// -- Process registry message ------------------------------------------------
 ////////////////////////////////////////////////////////////////////////////////
 
 // Returns the topic name to subscribe to (data topic for normal records,
@@ -254,7 +254,7 @@ static std::string ProcessRegistryMessage(const void *pPayload, size_t cbPayload
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// â”€â”€ Process telemetry data message â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// -- Process telemetry data message ------------------------------------------
 ////////////////////////////////////////////////////////////////////////////////
 
 static void ProcessDataMessage(const void *pPayload, size_t cbPayload,
@@ -307,7 +307,7 @@ static void ProcessDataMessage(const void *pPayload, size_t cbPayload,
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// â”€â”€ Process log message â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// -- Process log message -----------------------------------------------------
 ////////////////////////////////////////////////////////////////////////////////
 
 static const char* LogLevelName(uint8_t lvl)

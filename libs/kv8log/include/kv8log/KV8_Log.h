@@ -21,7 +21,7 @@
 
 #ifndef KV8_LOG_ENABLE
 
-// ── Compile-out path (default) ──────────────────────────────────────────────
+// -- Compile-out path (default) ----------------------------------------------
 #include <cstdint>  // uint64_t used by KV8_MONO_TO_NS no-op expansion
 #define KV8_CHANNEL(ch, name)
 #define KV8_TEL(var, name, mn, mx)
@@ -49,7 +49,7 @@
 #define KV8_LOGF_ERROR(fmt_, ...)        ((void)0)
 #define KV8_LOGF_FATAL(fmt_, ...)        ((void)0)
 
-#else // ── Enabled ─────────────────────────────────────────────────────────
+#else // -- Enabled ---------------------------------------------------------
 
 #include "kv8log/Channel.h"
 #include "kv8log/Counter.h"
@@ -111,7 +111,7 @@
 #define KV8_LOG_CONFIGURE(b, c, u, p) \
     kv8log::Runtime::Configure((b), (c), (u), (p))
 
-// ── Trace log macros (Phase L2) ────────────────────────────────────────────
+// -- Trace log macros (Phase L2) --------------------------------------------
 //
 // Per-call-site cache: one std::atomic<uint32_t> per macro expansion holds
 // the registered site hash.  First call: register (slow path, once); store

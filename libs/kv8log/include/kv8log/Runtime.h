@@ -12,7 +12,7 @@ namespace kv8log {
 // Opaque handle returned by kv8log_open in the runtime shared library.
 using kv8log_h = void*;
 
-// ── Vtable ────────────────────────────────────────────────────────────────────
+// -- Vtable --------------------------------------------------------------------
 // Plain-C function pointers resolved from the runtime shared library.
 // All fields are nullptr when the library is absent (silent no-op path).
 struct Vtable
@@ -66,7 +66,7 @@ struct Vtable
                     uint8_t   flags);
 };
 
-// ── Runtime ───────────────────────────────────────────────────────────────────
+// -- Runtime -------------------------------------------------------------------
 class Runtime
 {
 public:
@@ -89,7 +89,7 @@ public:
     // Returns 0 if the runtime library is absent.
     static uint64_t MonotonicToNs(uint64_t mono_ns);
 
-    // ── Trace log (Phase L2) ───────────────────────────────────────────────
+    // -- Trace log (Phase L2) -----------------------------------------------
     // Slow-path: register one call site against the default channel.  Returns
     // the FNV-32 site hash on success, or 1 if the runtime library is absent
     // (1 is a benign sentinel: callers cache it in a static so they never

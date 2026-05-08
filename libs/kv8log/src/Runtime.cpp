@@ -37,7 +37,7 @@ namespace kv8log {
 extern void  FlushDefaultChannel(int timeout_ms);
 extern void* GetDefaultChannelHandle();
 
-// ── Internal state ─────────────────────────────────────────────────────────
+// -- Internal state ---------------------------------------------------------
 namespace {
 
 struct Config
@@ -63,7 +63,7 @@ State& G()
     return s;
 }
 
-// ── Platform helpers ────────────────────────────────────────────────────
+// -- Platform helpers ----------------------------------------------------
 
 // Collect argv tokens from the OS without requiring main() to pass them.
 static std::vector<std::string> GetArgv()
@@ -136,7 +136,7 @@ static void ParseConfigFromArgvEnv(Config& cfg)
         cfg.channel = "kv8log/" + kv8util::GetProcessExeName();
 }
 
-// ── Shared library loading ──────────────────────────────────────────────
+// -- Shared library loading ----------------------------------------------
 
 #ifdef _WIN32
 static void* LoadSym(void* lib, const char* name)
@@ -238,7 +238,7 @@ static void InitOnce()
 
 } // anon namespace
 
-// ── Runtime public API ──────────────────────────────────────────────────────
+// -- Runtime public API ------------------------------------------------------
 
 void Runtime::Configure(const char* brokers, const char* channel,
                         const char* user, const char* pass)
@@ -313,7 +313,7 @@ void Runtime::Log(uint32_t site_hash, uint8_t level,
     fn.log(h, site_hash, level, payload, payload_len, flags);
 }
 
-// ── Config accessor (used by Channel.cpp) ──────────────────────────────────
+// -- Config accessor (used by Channel.cpp) ----------------------------------
 const char* RuntimeBrokers()  { std::call_once(G().init_once, InitOnce); return G().config.brokers.c_str(); }
 const char* RuntimeChannel()  { std::call_once(G().init_once, InitOnce); return G().config.channel.c_str(); }
 const char* RuntimeUser()     { std::call_once(G().init_once, InitOnce); return G().config.user.c_str(); }

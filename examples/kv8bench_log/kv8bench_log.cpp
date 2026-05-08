@@ -1,4 +1,4 @@
-﻿////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
 // kv8bench_log -- LOG hot-path throughput benchmark.
 //
 // Measures dispatch latency and throughput for KV8_LOGF_INFO from N producer
@@ -192,7 +192,7 @@ int main(int argc, char *argv[])
     setvbuf(stdout, nullptr, _IONBF, 0);
     TimerInit();
 
-    // â”€â”€ Parse arguments â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // -- Parse arguments ------------------------------------------------------
     std::string sBrokers     = "localhost:19092";
     std::string sUser        = "kv8producer";
     std::string sPass        = "kv8secret";
@@ -266,7 +266,7 @@ int main(int argc, char *argv[])
     // Build payload string.
     std::string sPayload(nPayload, 'x');
 
-    // â”€â”€ Pre-clean previous run's channel â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // -- Pre-clean previous run's channel -------------------------------------
     const std::string sChannel = DefaultChannelName();
     {
         try
@@ -278,11 +278,11 @@ int main(int argc, char *argv[])
         catch (...) {}
     }
 
-    // â”€â”€ Configure kv8log (must precede first emission) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // -- Configure kv8log (must precede first emission) -----------------------
     KV8_LOG_CONFIGURE(sBrokers.c_str(), sChannel.c_str(),
                       sUser.c_str(), sPass.c_str());
 
-    // â”€â”€ Print banner â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // -- Print banner ---------------------------------------------------------
     std::printf("kv8bench_log -- LOG hot-path throughput benchmark\n");
     std::printf("  brokers : %s\n", sBrokers.c_str());
     std::printf("  channel : %s\n", sChannel.c_str());
@@ -294,7 +294,7 @@ int main(int argc, char *argv[])
         std::printf("  duration: %.3f s\n", dDurationSec);
     std::printf("  sample  : 1-in-%d for latency\n\n", nSampleRate);
 
-    // â”€â”€ Launch threads â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // -- Launch threads -------------------------------------------------------
     ThreadFn fnTable[kMaxThreads] = {};
     ThreadFnTable<kMaxThreads>::Fill(fnTable);
 
@@ -324,7 +324,7 @@ int main(int argc, char *argv[])
                           std::cref(bStop));
     }
 
-    // â”€â”€ Per-second progress rows â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // -- Per-second progress rows ---------------------------------------------
     std::printf("  sec     calls/s        total_calls\n");
     uint64_t qwLastTotal = 0;
     int      nSecondsElapsed = 0;
@@ -363,11 +363,11 @@ int main(int argc, char *argv[])
 
     const double dElapsed = std::chrono::duration<double>(tEnd - tStart).count();
 
-    // â”€â”€ Flush kv8log so producer queue is drained â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // -- Flush kv8log so producer queue is drained ---------------------------
     std::printf("\n[BENCH] flushing kv8log...\n");
     KV8_TEL_FLUSH();
 
-    // â”€â”€ Aggregate latency â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // -- Aggregate latency ----------------------------------------------------
     std::vector<double> vAllLat;
     for (auto &v : vLatPerThread) vAllLat.insert(vAllLat.end(), v.begin(), v.end());
     Stats statLat = ComputeStats(vAllLat);
@@ -375,7 +375,7 @@ int main(int argc, char *argv[])
     const uint64_t qwTotal = qwTotalCalls.load();
     const double   dThru   = (dElapsed > 0.0) ? (qwTotal / dElapsed) : 0.0;
 
-    // â”€â”€ Acceptance thresholds (per LOG_PHASES.md L6.1) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // -- Acceptance thresholds (per LOG_PHASES.md L6.1) ----------------------
     const double dP50Limit  = 300.0;
     const double dP99Limit  = 1000.0;
     const double dThruLimit = 1.0e6;
@@ -384,7 +384,7 @@ int main(int argc, char *argv[])
     const bool   bPassThru = dThru > dThruLimit;
     const bool   bAllPass  = bPassP50 && bPassP99 && bPassThru;
 
-    // â”€â”€ Console summary â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // -- Console summary ------------------------------------------------------
     std::printf("\n=== Final summary ===\n");
     std::printf("Total calls:         %llu\n", (unsigned long long)qwTotal);
     std::printf("Duration (s):        %.3f\n", dElapsed);
@@ -407,7 +407,7 @@ int main(int argc, char *argv[])
                 bPassThru ? "PASS" : "FAIL",
                 dThru / 1.0e6, nThreads);
 
-    // â”€â”€ Report file â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // -- Report file ----------------------------------------------------------
     if (FILE *f = std::fopen(sReport.c_str(), "w"))
     {
         std::fprintf(f, "kv8bench_log -- LOG hot-path throughput benchmark\n");
@@ -443,7 +443,7 @@ int main(int argc, char *argv[])
                      sReport.c_str());
     }
 
-    // â”€â”€ Cleanup â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // -- Cleanup --------------------------------------------------------------
     if (bCleanup)
     {
         try

@@ -1,4 +1,4 @@
-﻿// kv8scope -- Kv8 Software Oscilloscope
+// kv8scope -- Kv8 Software Oscilloscope
 // CounterTree.cpp -- Counter / feed tree panel implementation.
 
 #include "CounterTree.h"

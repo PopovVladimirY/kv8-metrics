@@ -24,7 +24,7 @@ using namespace kv8;
         }                                                                \
     } while (0)
 
-// ── Helpers ─────────────────────────────────────────────────────────────────
+// -- Helpers -----------------------------------------------------------------
 
 static std::vector<uint8_t> EncodeLogRecord(const Kv8LogRecord& hdr,
                                             const void* pPayload, size_t cbPayload)
@@ -35,7 +35,7 @@ static std::vector<uint8_t> EncodeLogRecord(const Kv8LogRecord& hdr,
     return buf;
 }
 
-// ── Tests ───────────────────────────────────────────────────────────────────
+// -- Tests -------------------------------------------------------------------
 
 static void test_size_and_layout()
 {

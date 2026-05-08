@@ -6,7 +6,7 @@
 // IKv8Producer::Create().  No librdkafka headers are exposed.
 //
 // Typical usage
-// ─────────────
+// -------------
 // kv8probe -- synthetic test data producer:
 //
 //     auto p = IKv8Producer::Create(cfg);
@@ -74,7 +74,7 @@ public:
     /// Return the cumulative count of successfully delivered messages.
     virtual int64_t GetDeliverySuccess() const { return 0; }
 
-    // ── Pre-created topic handle API (hot-path optimisation) ──────────────────
+    // -- Pre-created topic handle API (hot-path optimisation) ------------------
 
     /// Pre-create and cache an opaque topic handle for a given topic name.
     /// Avoids the per-message string hash lookup inside rd_kafka_producev().
@@ -99,7 +99,7 @@ public:
         return false;
     }
 
-    // ── Heartbeat ─────────────────────────────────────────────────────────────
+    // -- Heartbeat -------------------------------------------------------------
     //
     // The preferred way to enable heartbeating is to set Kv8Config::sHeartbeatTopic
     // before calling IKv8Producer::Create().  The producer then starts the
@@ -128,7 +128,7 @@ public:
     /// the heartbeat was never started.  Called automatically by the destructor.
     virtual void StopHeartbeat(bool bSendShutdown = true) { (void)bSendShutdown; }
 
-    // ── Factory ────────────────────────────────────────────────────────────────
+    // -- Factory ----------------------------------------------------------------
 
     /// Create and return a new producer.
     /// Returns nullptr only on a fatal Kafka configuration error.

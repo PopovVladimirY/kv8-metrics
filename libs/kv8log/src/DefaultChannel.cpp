@@ -28,7 +28,7 @@ Channel& DefaultChannel()
     return s_channel;
 }
 
-// ── Helpers called by Runtime::Flush() and Runtime::MonotonicToNs() ─────────
+// -- Helpers called by Runtime::Flush() and Runtime::MonotonicToNs() ---------
 
 // These are defined here (not in Runtime.cpp) so that Channel is fully
 // defined without a circular include.  Runtime.cpp declares them extern.
