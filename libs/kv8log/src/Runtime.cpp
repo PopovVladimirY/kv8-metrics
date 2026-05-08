@@ -198,6 +198,15 @@ static void InitOnce()
     if (!g.config_overridden)
         ParseConfigFromArgvEnv(g.config);
 
+    // Test/diagnostic escape hatch: when KV8_DISABLE_RUNTIME is set in the
+    // environment, skip the dlopen/LoadLibrary attempt entirely so every
+    // KV8_LOG_* / KV8_TEL_ADD call deterministically reduces to a no-op.
+    // Production users never set this; unit tests that want to measure the
+    // pure macro-cache fast path (e.g. test_log_static_cache) set it before
+    // the first telemetry call.
+    if (GetEnv("KV8_DISABLE_RUNTIME"))
+        return;
+
     // Try loading the runtime shared library. Absent library is not an error.
     const char* lib_names[] = {
 #ifdef _WIN32

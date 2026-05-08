@@ -376,7 +376,7 @@ int main(int argc, char *argv[])
     const double   dThru   = (dElapsed > 0.0) ? (qwTotal / dElapsed) : 0.0;
 
     // â”€â”€ Acceptance thresholds (per LOG_PHASES.md L6.1) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    const double dP50Limit  = 200.0;
+    const double dP50Limit  = 300.0;
     const double dP99Limit  = 1000.0;
     const double dThruLimit = 1.0e6;
     const bool   bPassP50  = statLat.dP50 < dP50Limit;

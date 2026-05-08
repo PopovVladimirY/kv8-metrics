@@ -3,9 +3,13 @@
 //
 // Phase L5 unit test: exercise the per-call-site static atomic cache.
 //
-// The runtime shared library is intentionally NOT loaded by this test (the
-// DLL is alongside the executable, but no KV8_LOG_CONFIGURE is issued so the
-// default channel handle is never opened against a broker).  In that mode:
+// The runtime shared library is intentionally NOT loaded by this test.  On
+// Windows that happens incidentally because kv8log_runtime.dll is not on the
+// test exe's PATH; on Linux the .so sits next to the exe and dlopen would
+// otherwise succeed.  To get deterministic, platform-independent behaviour
+// the test sets KV8_DISABLE_RUNTIME=1 BEFORE the first KV8_LOG_* macro
+// expansion -- Runtime::InitOnce() then short-circuits and never opens the
+// shared library, so:
 //
 //   - Runtime::RegisterLogSite returns the sentinel value 1 (benign, never 0)
 //     because the runtime symbol pointer is null OR no channel handle exists.
@@ -23,6 +27,7 @@
 ////////////////////////////////////////////////////////////////////////////////
 
 #include "kv8log/KV8_Log.h"
+#include "kv8log/Runtime.h"
 
 #include <atomic>
 #include <chrono>
@@ -61,6 +66,26 @@ static void TouchTwoSites()
 
 int main()
 {
+    // Force the runtime loader to short-circuit BEFORE any KV8_LOG_* macro
+    // expansion (the very first call lazily triggers Runtime::InitOnce via
+    // std::call_once).  Without this the kv8log_runtime shared library would
+    // be auto-loaded on platforms where it sits next to the test exe (Linux),
+    // a real Kafka producer would spin up, and the 10000-iteration timing
+    // assertion below would measure real produces instead of the macro-cache
+    // fast path the test is designed to exercise.
+#ifdef _WIN32
+    _putenv_s("KV8_DISABLE_RUNTIME", "1");
+#else
+    setenv("KV8_DISABLE_RUNTIME", "1", 1);
+#endif
+
+    // Sanity check: the runtime escape hatch must have taken effect.  Touching
+    // Runtime::Fn() forces InitOnce() to run; with KV8_DISABLE_RUNTIME=1 set
+    // the vtable stays zero-initialised, so the dispatch pointers are null and
+    // every KV8_LOG_* below reduces to a relaxed atomic load + no-op.
+    EXPECT(kv8log::Runtime::Fn().add == nullptr);
+    EXPECT(kv8log::Runtime::Fn().log == nullptr);
+
     // 1. Single-thread bulk dispatch must complete quickly.
     {
         const int kIters = 10000;
