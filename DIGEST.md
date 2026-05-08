@@ -93,7 +93,7 @@ Architecture highlights:
 
 ---
 
-## kv8zoom -- Frame Assembler / Attitude Filter
+## kv8zoom (a prototype) -- Frame Assembler / Attitude Filter
 
 Reads raw Kafka telemetry, assembles multi-topic frames time-aligned by the
 hardware timestamp, applies an attitude filter (`AttitudeFilter`), and feeds

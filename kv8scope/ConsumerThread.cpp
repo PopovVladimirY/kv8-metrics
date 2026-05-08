@@ -5,6 +5,7 @@
 #include "AnnotationStore.h"
 #include "LogStore.h"
 #include "ConfigStore.h"
+#include "Constants.h"
 #include "StatsEngine.h"
 
 #include <kv8/IKv8Consumer.h>
@@ -484,7 +485,9 @@ void ConsumerThread::Run()
     // ---- Hot loop -------------------------------------------------------
     while (!m_bStop.load(std::memory_order_relaxed))
     {
-        pConsumer->PollBatch(4096, 10, onMessage);
+        pConsumer->PollBatch(kv8scope::CONSUMER_POLL_BATCH,
+                             kv8scope::CONSUMER_POLL_TIMEOUT_MS,
+                             onMessage);
     }
 
     pConsumer->Stop();

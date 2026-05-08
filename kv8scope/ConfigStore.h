@@ -3,28 +3,32 @@
 
 #pragma once
 
+#include "Constants.h"
+#include <kv8/Kv8Constants.h>
+
 #include <map>
 #include <string>
 #include <vector>
 
 struct ScopeConfig
 {
-    // Connection
-    std::string sBrokers          = "localhost:19092";
-    std::string sSecurityProtocol = "sasl_plaintext";
-    std::string sSaslMechanism    = "PLAIN";
-    std::string sUsername          = "kv8producer";
-    std::string sPassword          = "kv8secret";
-    int         iSessionPollMs    = 2000;
-    int         iMetaStabilizeMs  = 4000;  // debounce for MetaUpdated (must be > iSessionPollMs)
+    // Connection -- defaults pulled from <kv8/Kv8Constants.h> so that
+    // producer (kv8log runtime) and consumer (kv8scope) cannot drift.
+    std::string sBrokers          = kv8::KV8_DEFAULT_BROKERS;
+    std::string sSecurityProtocol = kv8::KV8_DEFAULT_SECURITY_PROTO;
+    std::string sSaslMechanism    = kv8::KV8_DEFAULT_SASL_MECHANISM;
+    std::string sUsername          = kv8::KV8_DEFAULT_USER;
+    std::string sPassword          = kv8::KV8_DEFAULT_PASSWORD;
+    int         iSessionPollMs    = kv8::KV8_SESSION_POLL_MS;
+    int         iMetaStabilizeMs  = kv8::KV8_META_STABILIZE_MS;
 
     // UI
     std::string sTheme            = "night_sky";
     std::string sFontFace         = "sans_serif";
     int         iFontSize         = 22;
-    double      dDefaultTimeWin   = 15.0;
-    double      dRealtimeTimeWin  = 15.0;
-    int         iMaxPointsPerTrace = 16000000;
+    double      dDefaultTimeWin   = kv8scope::DEFAULT_TIME_WINDOW_S;
+    double      dRealtimeTimeWin  = kv8scope::REALTIME_TIME_WINDOW_S;
+    int         iMaxPointsPerTrace = kv8scope::MAX_POINTS_PER_TRACE;
     std::string sVizMode          = "range";
     bool        bCrossBar         = true;  // show crosshair + value tooltip
 
@@ -48,16 +52,16 @@ struct ScopeConfig
     struct LivenessConfig
     {
         /// Seconds since the last heartbeat before classifying GoingOffline.
-        int iHeartbeatLiveS      = 7;
+        int iHeartbeatLiveS      = kv8::KV8_LIVENESS_OFFLINE_THRESHOLD_S;
         /// Seconds since the last heartbeat before classifying Offline.
-        int iHeartbeatDeadS      = 30;
+        int iHeartbeatDeadS      = kv8::KV8_LIVENESS_DEAD_THRESHOLD_S;
         /// Seconds since the latest data topic message before GoingOffline
         /// (used when no .hb topic exists).
-        int iDataLiveS           = 7;
+        int iDataLiveS           = kv8::KV8_LIVENESS_OFFLINE_THRESHOLD_S;
         /// Seconds since the latest data topic message before Offline.
-        int iDataDeadS           = 30;
+        int iDataDeadS           = kv8::KV8_LIVENESS_DEAD_THRESHOLD_S;
         /// Heartbeat interval in milliseconds (informational; not enforced here).
-        int iHeartbeatIntervalMs = 3000;
+        int iHeartbeatIntervalMs = kv8::KV8_HEARTBEAT_INTERVAL_MS;
     } liveness;
 };
 

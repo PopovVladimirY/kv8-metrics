@@ -13,6 +13,8 @@
 
 #include "kv8log/Runtime.h"
 
+#include <kv8/Kv8Constants.h>
+
 #include <mutex>
 #include <string>
 #include <vector>
@@ -40,10 +42,10 @@ namespace {
 
 struct Config
 {
-    std::string brokers = "localhost:19092";
+    std::string brokers = kv8::KV8_DEFAULT_BROKERS;
     std::string channel;   // filled in from exe name if empty
-    std::string user    = "kv8producer";
-    std::string pass    = "kv8secret";
+    std::string user    = kv8::KV8_DEFAULT_USER;
+    std::string pass    = kv8::KV8_DEFAULT_PASSWORD;
 };
 
 struct State
@@ -258,7 +260,7 @@ void Runtime::Configure(const char* brokers, const char* channel,
 {
     State& g = G();
     // Must be called before first use; if init_once already fired, this is a no-op.
-    g.config.brokers = brokers ? brokers : "localhost:19092";
+    g.config.brokers = brokers ? brokers : kv8::KV8_DEFAULT_BROKERS;
     g.config.channel = channel ? channel : "";
     if (user) g.config.user = user;
     if (pass) g.config.pass = pass;

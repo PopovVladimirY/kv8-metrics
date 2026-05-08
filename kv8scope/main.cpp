@@ -2,6 +2,7 @@
 // main.cpp -- GLFW/ImGui/ImPlot bootstrap, --config parsing, render loop.
 
 #include "App.h"
+#include "Constants.h"
 
 #include "imgui.h"
 #include "imgui_impl_glfw.h"
@@ -34,7 +35,7 @@ static std::string ParseConfigPath(int argc, char* argv[])
             return argv[i + 1];
         }
     }
-    return "kv8scope.json";  // default
+    return "config/kv8scope.json";  // default (relative to current working directory)
 }
 
 // ---------------------------------------------------------------------------
@@ -78,6 +79,10 @@ int main(int argc, char* argv[])
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+    // Persist Dear ImGui window layout under ./config/ alongside kv8scope.json
+    // (relative to the current working directory; same convention as the
+    // application config file).
+    io.IniFilename = "config/imgui.ini";
 
     ImGui::StyleColorsDark();
 
@@ -95,7 +100,7 @@ int main(int argc, char* argv[])
     // 30 fps is sufficient for data visualisation and reduces CPU/GPU pressure,
     // leaving more headroom for the consumer threads.
     using FrameClock = std::chrono::steady_clock;
-    constexpr std::chrono::microseconds kFrameBudget(33333); // ~30 fps
+    constexpr std::chrono::microseconds kFrameBudget(kv8scope::FRAME_BUDGET_US); // ~30 fps
     auto tpFrameStart = FrameClock::now();
 
     // ---- Main loop --------------------------------------------------------

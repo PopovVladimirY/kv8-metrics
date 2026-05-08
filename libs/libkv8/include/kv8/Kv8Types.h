@@ -15,6 +15,8 @@
 
 #pragma once
 
+#include <kv8/Kv8Constants.h>
+
 #include <cstdint>
 #include <cstddef>
 #include <cstdio>
@@ -37,18 +39,18 @@ namespace kv8 {
 /// Passed to IKv8Consumer::Create() and IKv8Producer::Create().
 struct Kv8Config
 {
-    std::string sBrokers       = "localhost:19092"; ///< Bootstrap broker list (host:port,...)
-    std::string sSecurityProto = "sasl_plaintext"; ///< plaintext|sasl_plaintext|sasl_ssl
-    std::string sSaslMechanism = "PLAIN";          ///< PLAIN|SCRAM-SHA-256|SCRAM-SHA-512
-    std::string sUser          = "kv8producer";    ///< SASL username
-    std::string sPass          = "kv8secret";      ///< SASL password
-    std::string sGroupID;                          ///< Consumer group; empty = auto-generate
+    std::string sBrokers       = KV8_DEFAULT_BROKERS;        ///< Bootstrap broker list (host:port,...)
+    std::string sSecurityProto = KV8_DEFAULT_SECURITY_PROTO; ///< plaintext|sasl_plaintext|sasl_ssl
+    std::string sSaslMechanism = KV8_DEFAULT_SASL_MECHANISM; ///< PLAIN|SCRAM-SHA-256|SCRAM-SHA-512
+    std::string sUser          = KV8_DEFAULT_USER;           ///< SASL username
+    std::string sPass          = KV8_DEFAULT_PASSWORD;       ///< SASL password
+    std::string sGroupID;                                    ///< Consumer group; empty = auto-generate
 
     // When non-empty the producer auto-starts a heartbeat thread on the given
     // topic immediately after connecting.  The thread stops automatically when
     // the producer is destroyed (sending a clean-shutdown marker).
-    std::string sHeartbeatTopic;                   ///< e.g. "<channel>.<sessionId>.hb"; empty = no heartbeat
-    int         nHeartbeatIntervalMs = 3000;       ///< Interval between successive heartbeat records
+    std::string sHeartbeatTopic;                              ///< e.g. "<channel>.<sessionId>.hb"; empty = no heartbeat
+    int         nHeartbeatIntervalMs = KV8_HEARTBEAT_INTERVAL_MS; ///< Interval between successive heartbeat records
 };
 
 ////////////////////////////////////////////////////////////////////////////////

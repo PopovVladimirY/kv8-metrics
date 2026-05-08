@@ -3,11 +3,13 @@
 
 #include "WaveformRenderer.h"
 #include "ConfigStore.h"
+#include "Constants.h"
 #include "LogStore.h"
 #include "LogPanel.h"
 
 #include <algorithm>
 #include <chrono>
+#include <climits>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -98,9 +100,9 @@ static ImVec4 EnsureContrast(ImVec4 fg, const ImVec4& bg, float minRatio = 3.0f)
 WaveformRenderer::WaveformRenderer(const ConfigStore* pConfig)
     : m_pConfig(pConfig)
 {
-    // Pre-allocate the drain scratch buffer.  4096 samples per drain
-    // call is a reasonable batch size; the buffer will grow if needed.
-    m_drainBuf.resize(4096);
+    // Pre-allocate the drain scratch buffer.  RENDER_DRAIN_BATCH samples per
+    // drain call is a reasonable batch size; the buffer will grow if needed.
+    m_drainBuf.resize(kv8scope::RENDER_DRAIN_BATCH);
 
     // All annotation types are visible by default.
     for (int i = 0; i < AnnotationStore::kTypeCount; ++i)
@@ -154,8 +156,8 @@ void WaveformRenderer::RegisterCounter(uint32_t dwHash, uint16_t wCounterID,
     }
 
     // Reserve a generous initial capacity to reduce early reallocations.
-    cd.vTimestamps.reserve(65536);
-    cd.vValues.reserve(65536);
+    cd.vTimestamps.reserve(kv8scope::TRACE_BUFFER_RESERVE);
+    cd.vValues.reserve(kv8scope::TRACE_BUFFER_RESERVE);
 
     m_counters.emplace(key, std::move(cd));
     ++m_iNextColor;
@@ -874,7 +876,7 @@ bool WaveformRenderer::ExportCSV(double dXMin, double dXMax,
     };
 
     std::vector<Row> rows;
-    rows.reserve(65536);
+    rows.reserve(kv8scope::TRACE_BUFFER_RESERVE);
 
     for (const auto& [key, cd] : m_counters)
     {
