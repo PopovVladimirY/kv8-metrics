@@ -14,6 +14,11 @@ endif()
 
 project(Kv8)
 
+include(GNUInstallDirs)
+include(CMakePackageConfigHelpers)
+
+set(KV8_VERSION "0.1.0" CACHE STRING "Kv8 package version")
+
 # -- Architecture and tuning -------------------------------------------------
 # KV8_ARCH  controls the target architecture:
 #   GCC/Clang : -march=<value>   (default: native)
@@ -62,6 +67,7 @@ if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
 endif()
 
 enable_testing()
+set(CMAKE_INSTALL_DEFAULT_COMPONENT_NAME kv8-runtime)
 # -- Libraries ----------------------------------------------------------------
 add_subdirectory(libs/libkv8)
 add_subdirectory(libs/kv8util)
@@ -78,7 +84,7 @@ add_subdirectory(examples/kv8feeder)
 # -- UI application -----------------------------------------------------------
 add_subdirectory(kv8scope)
 # -- kv8zoom WebSocket bridge -------------------------------------------------
-add_subdirectory(kv8zoom)
+# add_subdirectory(kv8zoom)
 
 # ── Deploy vcpkg runtime DLLs alongside the installed executables ─────────────
 # applocal.ps1 (the vcpkg DLL copy hook) requires dumpbin in PATH, which is
@@ -98,4 +104,25 @@ if(WIN32 AND DEFINED VCPKG_INSTALLED_DIR AND DEFINED VCPKG_TARGET_TRIPLET)
                         "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/bin/")
     endif()
 endif()
+
+# ── Packaging (runtime + SDK) ───────────────────────────────────────────────
+set(CPACK_PACKAGE_NAME "Kv8")
+set(CPACK_PACKAGE_VENDOR "Kv8")
+set(CPACK_PACKAGE_VERSION "${KV8_VERSION}")
+set(CPACK_PACKAGE_FILE_NAME "${CPACK_PACKAGE_NAME}-${CPACK_PACKAGE_VERSION}-${CMAKE_SYSTEM_NAME}-${CMAKE_SYSTEM_PROCESSOR}")
+
+if(WIN32)
+    set(CPACK_GENERATOR "ZIP")
+else()
+    set(CPACK_GENERATOR "TGZ")
+endif()
+
+set(CPACK_COMPONENTS_ALL kv8-runtime kv8-sdk)
+set(CPACK_ARCHIVE_COMPONENT_INSTALL ON)
+set(CPACK_COMPONENT_KV8_RUNTIME_DISPLAY_NAME "Kv8 Runtime")
+set(CPACK_COMPONENT_KV8_RUNTIME_DESCRIPTION "Kv8 binaries for running tools and examples")
+set(CPACK_COMPONENT_KV8_SDK_DISPLAY_NAME "Kv8 SDK")
+set(CPACK_COMPONENT_KV8_SDK_DESCRIPTION "Client development SDK (kv8log facade library and required headers)")
+
+include(CPack)
 

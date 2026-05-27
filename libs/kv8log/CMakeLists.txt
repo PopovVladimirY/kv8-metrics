@@ -55,9 +55,52 @@ set_target_properties(kv8log_runtime PROPERTIES
     VS_GLOBAL_ResolveAssemblyWarnOrErrorOnTargetArchitectureMismatch "None"
 )
 
-install(TARGETS kv8log_facade  ARCHIVE DESTINATION lib)
-install(TARGETS kv8log_runtime RUNTIME DESTINATION bin LIBRARY DESTINATION bin)
-install(DIRECTORY include/ DESTINATION include)
+install(TARGETS kv8log_facade
+    EXPORT Kv8SdkTargets
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    COMPONENT kv8-sdk
+)
+install(TARGETS kv8log_runtime
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+    LIBRARY DESTINATION ${CMAKE_INSTALL_BINDIR}
+    COMPONENT kv8-runtime
+)
+install(DIRECTORY include/
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+    COMPONENT kv8-sdk
+)
+install(FILES
+    ${CMAKE_SOURCE_DIR}/libs/libkv8/include/kv8/Kv8Types.h
+    ${CMAKE_SOURCE_DIR}/libs/libkv8/include/kv8/Kv8Constants.h
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/kv8
+    COMPONENT kv8-sdk
+)
+
+install(EXPORT Kv8SdkTargets
+    FILE Kv8SdkTargets.cmake
+    NAMESPACE Kv8::
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/Kv8Sdk
+    COMPONENT kv8-sdk
+)
+
+configure_package_config_file(
+    ${CMAKE_SOURCE_DIR}/cmake/Kv8SdkConfig.cmake.in
+    ${CMAKE_CURRENT_BINARY_DIR}/Kv8SdkConfig.cmake
+    INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/Kv8Sdk
+)
+
+write_basic_package_version_file(
+    ${CMAKE_CURRENT_BINARY_DIR}/Kv8SdkConfigVersion.cmake
+    VERSION ${KV8_VERSION}
+    COMPATIBILITY SameMajorVersion
+)
+
+install(FILES
+    ${CMAKE_CURRENT_BINARY_DIR}/Kv8SdkConfig.cmake
+    ${CMAKE_CURRENT_BINARY_DIR}/Kv8SdkConfigVersion.cmake
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/Kv8Sdk
+    COMPONENT kv8-sdk
+)
 
 # ── Unit tests ────────────────────────────────────────────────────────────────
 enable_testing()

@@ -41,4 +41,7 @@ node_modules/
 dist/
 Kv8Planning/
 *.env
+*.zip
+*.tar.gz
+_CPack*/
 
