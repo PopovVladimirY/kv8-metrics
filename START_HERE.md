@@ -320,6 +320,57 @@ Dear ImGui, GLFW, OpenGL; C++17; CMake >= 3.20.
 
 ---
 
+## Packaging
+
+CPack produces two component archives from the same build tree:
+
+| Component | Contents |
+|-----------|----------|
+| `kv8-runtime` | Compiled binaries (kv8scope, kv8zoom, tools, examples) |
+| `kv8-sdk` | kv8log facade library + public headers for instrumenting your own code |
+
+### Windows -- ZIP archives
+
+Run from the repository root after a successful build:
+
+```powershell
+cpack --preset win-release
+```
+
+Or without presets:
+
+```powershell
+cmake --build build --target PACKAGE
+```
+
+Two ZIP files are written to `build\`:
+
+```
+Kv8-<version>-Windows-AMD64-kv8-runtime.zip
+Kv8-<version>-Windows-AMD64-kv8-sdk.zip
+```
+
+### Linux -- TGZ archives
+
+```sh
+cpack --preset linux-release
+```
+
+Or without presets:
+
+```sh
+cmake --build build --target package
+```
+
+Two tarballs are written to `build/`:
+
+```
+Kv8-<version>-Linux-x86_64-kv8-runtime.tar.gz
+Kv8-<version>-Linux-x86_64-kv8-sdk.tar.gz
+```
+
+---
+
 ## ML Extension (MODEL.md)
 
 Describes but does not yet ship a full `kv8infer` consumer: offline training

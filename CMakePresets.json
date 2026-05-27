@@ -96,5 +96,31 @@
             "name": "linux-debug",
             "configurePreset": "linux-debug"
         }
+    ],
+    "packagePresets": [
+        {
+            "name": "win-release",
+            "displayName": "Windows x64 Release Package",
+            "description": "ZIP archives (kv8-runtime + kv8-sdk) for Windows x64",
+            "configurePreset": "win-x64-release",
+            "generators": ["ZIP"],
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Windows"
+            }
+        },
+        {
+            "name": "linux-release",
+            "displayName": "Linux Release Package",
+            "description": "TGZ archives (kv8-runtime + kv8-sdk) for Linux",
+            "configurePreset": "linux-release",
+            "generators": ["TGZ"],
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Linux"
+            }
+        }
     ]
 }
